@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+
+# vibe trash
+# extract sections of ietf draft txt file format
+# see main for usage
+
 import re
 import sys
 import argparse
