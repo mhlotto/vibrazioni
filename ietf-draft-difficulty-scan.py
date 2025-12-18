@@ -9,6 +9,18 @@ Outputs JSON to stdout.
 
 Usage:
   python ietf-draft-difficulty-scan.py path/to/draft.txt > report.json
+
+To do:
+
+- Add sections for detection:
+  - Appendix / examples sections
+  - Labeled figures / listings
+  - Algorithm / processing steps
+  - Extension / negotiation points
+  - Inline registry definitions
+  - Error-handling semantics
+  - Repeated record definitions
+  - Numeric / mathematical constraints
 """
 
 from __future__ import annotations
