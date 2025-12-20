@@ -407,6 +407,287 @@ Internet-Draft             SCITT Architecture               October 2025
 
 """,
         },
+        {
+            "query": "2.1",
+            "expected_output": """2.1.  Generic SSC Problem Statement
+
+   Supply chain security is a prerequisite to protecting consumers and
+   minimizing economic, public health, and safety threats.  Supply chain
+   security has historically focused on risk management practices to
+   safeguard logistics, meet regulatory requirements, forecast demand,
+   and optimize inventory.  While these elements are foundational to a
+   healthy supply chain, an integrated cyber-security-based perspective
+   of the software supply chains remains broadly undefined.  Recently,
+   the global community has experienced numerous supply chain attacks
+   targeting weaknesses in software supply chains.  As illustrated in
+   Figure 1, a software supply chain attack may leverage one or more
+   life-cycle stages and directly or indirectly target the component.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Birkholz, et al.          Expires 13 April 2026                 [Page 5]
+
+
+Internet-Draft             SCITT Architecture               October 2025
+
+
+         Dependencies        Malicious 3rd-party package or version
+              |
+              |
+        +-----+-----+
+        |           |
+        |   Code    |        Compromise source control
+        |           |
+        +-----+-----+
+              |
+        +-----+-----+
+        |           |        Malicious plug-ins
+        |  Commit   |        Malicious commit
+        |           |
+        +-----+-----+
+              |
+        +-----+-----+
+        |           |        Modify build tasks or the build environment
+        |   Build   |        Poison the build agent/compiler
+        |           |        Tamper with build cache
+        +-----+-----+
+              |
+        +-----+-----+
+        |           |        Compromise test tools
+        |    Test   |        Falsification of test results
+        |           |
+        +-----+-----+
+              |
+        +-----+-----+
+        |           |        Use bad packages
+        |  Package  |        Compromise package repository
+        |           |
+        +-----+-----+
+              |
+        +-----+-----+
+        |           |        Modify release tasks
+        |  Release  |        Modify build drop prior to release
+        |           |
+        +-----+-----+
+              |
+        +-----+-----+
+        |           |
+        |  Deploy   |        Tamper with versioning and update process
+        |           |
+        +-----------+
+
+                  Figure 1: Example SSC Life-Cycle Threats
+
+
+
+
+
+Birkholz, et al.          Expires 13 April 2026                 [Page 6]
+
+
+Internet-Draft             SCITT Architecture               October 2025
+
+
+   DevSecOps, as defined in [NIST.SP.800-204C], often depends on third-
+   party and open-source software.  These dependencies can be quite
+   complex throughout the supply chain, so checking provenance and
+   traceability throughout their lifecycle is difficult.  There is a
+   need for manageable auditability and accountability of digital
+   products.  Typically, the range of types of statements about digital
+   products (and their dependencies) is vast, heterogeneous, and can
+   differ between community policy requirements.  Taking the type and
+   structure of all statements about digital products into account might
+   not be possible.  Examples of statements may include commit
+   signatures, build environment and parameters, software bill of
+   materials, static and dynamic application security testing results,
+   fuzz testing results, release approvals, deployment records,
+   vulnerability scan results, and patch logs.  In consequence, instead
+   of trying to understand and describe the detailed syntax and
+   semantics of every type of statement about digital products, the
+   SCITT architecture focuses on ensuring statement authenticity,
+   visibility/transparency, and intends to provide scalable
+   accessibility.  Threats and practical issues can also arise from
+   unintended side-effects of using security techniques outside their
+   proper bounds.  For instance digital signatures may fail to verify
+   past their expiry date even though the signed item itself remains
+   completely valid.  Or a signature may verify even though the
+   information it is securing is now found unreliable but fine-grained
+   revocation is too hard.
+
+   Lastly, where data exchange underpins serious business decision-
+   making, it is important to hold the producers of those data to a
+   higher standard of auditability.  The SCITT architecture provides
+   mechanisms and structures for ensuring that the makers of
+   authoritative statements can be held accountable and not hide or
+   shred the evidence when it becomes inconvenient later.
+
+   The following use cases illustrate the scope of SCITT and elaborate
+   on the generic problem statement above.
+""",
+            "expected_clean_output": """2.1.  Generic SSC Problem Statement
+
+   Supply chain security is a prerequisite to protecting consumers and
+   minimizing economic, public health, and safety threats.  Supply chain
+   security has historically focused on risk management practices to
+   safeguard logistics, meet regulatory requirements, forecast demand,
+   and optimize inventory.  While these elements are foundational to a
+   healthy supply chain, an integrated cyber-security-based perspective
+   of the software supply chains remains broadly undefined.  Recently,
+   the global community has experienced numerous supply chain attacks
+   targeting weaknesses in software supply chains.  As illustrated in
+   Figure 1, a software supply chain attack may leverage one or more
+   life-cycle stages and directly or indirectly target the component.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+         Dependencies        Malicious 3rd-party package or version
+              |
+              |
+        +-----+-----+
+        |           |
+        |   Code    |        Compromise source control
+        |           |
+        +-----+-----+
+              |
+        +-----+-----+
+        |           |        Malicious plug-ins
+        |  Commit   |        Malicious commit
+        |           |
+        +-----+-----+
+              |
+        +-----+-----+
+        |           |        Modify build tasks or the build environment
+        |   Build   |        Poison the build agent/compiler
+        |           |        Tamper with build cache
+        +-----+-----+
+              |
+        +-----+-----+
+        |           |        Compromise test tools
+        |    Test   |        Falsification of test results
+        |           |
+        +-----+-----+
+              |
+        +-----+-----+
+        |           |        Use bad packages
+        |  Package  |        Compromise package repository
+        |           |
+        +-----+-----+
+              |
+        +-----+-----+
+        |           |        Modify release tasks
+        |  Release  |        Modify build drop prior to release
+        |           |
+        +-----+-----+
+              |
+        +-----+-----+
+        |           |
+        |  Deploy   |        Tamper with versioning and update process
+        |           |
+        +-----------+
+
+                  Figure 1: Example SSC Life-Cycle Threats
+
+
+
+
+
+
+
+
+
+   DevSecOps, as defined in [NIST.SP.800-204C], often depends on third-
+   party and open-source software.  These dependencies can be quite
+   complex throughout the supply chain, so checking provenance and
+   traceability throughout their lifecycle is difficult.  There is a
+   need for manageable auditability and accountability of digital
+   products.  Typically, the range of types of statements about digital
+   products (and their dependencies) is vast, heterogeneous, and can
+   differ between community policy requirements.  Taking the type and
+   structure of all statements about digital products into account might
+   not be possible.  Examples of statements may include commit
+   signatures, build environment and parameters, software bill of
+   materials, static and dynamic application security testing results,
+   fuzz testing results, release approvals, deployment records,
+   vulnerability scan results, and patch logs.  In consequence, instead
+   of trying to understand and describe the detailed syntax and
+   semantics of every type of statement about digital products, the
+   SCITT architecture focuses on ensuring statement authenticity,
+   visibility/transparency, and intends to provide scalable
+   accessibility.  Threats and practical issues can also arise from
+   unintended side-effects of using security techniques outside their
+   proper bounds.  For instance digital signatures may fail to verify
+   past their expiry date even though the signed item itself remains
+   completely valid.  Or a signature may verify even though the
+   information it is securing is now found unreliable but fine-grained
+   revocation is too hard.
+
+   Lastly, where data exchange underpins serious business decision-
+   making, it is important to hold the producers of those data to a
+   higher standard of auditability.  The SCITT architecture provides
+   mechanisms and structures for ensuring that the makers of
+   authoritative statements can be held accountable and not hide or
+   shred the evidence when it becomes inconvenient later.
+
+   The following use cases illustrate the scope of SCITT and elaborate
+   on the generic problem statement above.
+""",
+        },
     ],
 }
 
