@@ -234,13 +234,6 @@ Internet-Draft             SCITT Architecture               October 2025
    The terms "header", "payload", and "to-be-signed bytes" are defined
    in [STD96].
 
-
-
-
-
-
-
-
    The term "claim" is defined in [RFC8392].
 
    Append-only Log:  a Statement Sequence comprising the entire
@@ -288,13 +281,6 @@ Internet-Draft             SCITT Architecture               October 2025
       broader interpretation of these terms in both JOSE and COSE, and
       the guidance in [RFC8725] generally applies the COSE equivalent
       terms with consistent semantics.
-
-
-
-
-
-
-
 
    Non-equivocation:  a state where all proofs provided by the
       Transparency Service to Relying Parties are produced from a single
@@ -345,12 +331,6 @@ Internet-Draft             SCITT Architecture               October 2025
       qualify the term "attestation" in their specific context to avoid
       confusion and ambiguity.
 
-
-
-
-
-
-
    Statement:  any serializable information about an Artifact.  To help
       interpretation of Statements, they must be tagged with a relevant
       media type (as specified in [RFC6838]).  A Statement may represent
@@ -397,15 +377,7 @@ Internet-Draft             SCITT Architecture               October 2025
       Transparency Service.  SCITT supports multiple Verifiable Data
       Structures and Receipt formats as defined in
       [I-D.draft-ietf-cose-merkle-tree-proofs], accommodating different
-      Transparency Service implementations.
-
-
-
-
-
-
-
-""",
+      Transparency Service implementations.""",
         },
         {
             "query": "2.1",
@@ -564,38 +536,6 @@ Internet-Draft             SCITT Architecture               October 2025
    Figure 1, a software supply chain attack may leverage one or more
    life-cycle stages and directly or indirectly target the component.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
          Dependencies        Malicious 3rd-party package or version
               |
               |
@@ -643,14 +583,6 @@ Internet-Draft             SCITT Architecture               October 2025
 
                   Figure 1: Example SSC Life-Cycle Threats
 
-
-
-
-
-
-
-
-
    DevSecOps, as defined in [NIST.SP.800-204C], often depends on third-
    party and open-source software.  These dependencies can be quite
    complex throughout the supply chain, so checking provenance and
@@ -685,8 +617,7 @@ Internet-Draft             SCITT Architecture               October 2025
    shred the evidence when it becomes inconvenient later.
 
    The following use cases illustrate the scope of SCITT and elaborate
-   on the generic problem statement above.
-""",
+   on the generic problem statement above.""",
         },
     ],
 }

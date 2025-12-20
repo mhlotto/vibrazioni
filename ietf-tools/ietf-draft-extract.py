@@ -100,7 +100,19 @@ def clean_lines(lines):
             continue
         line = re.sub(r"\s+\[Page\s+\d+\]$", "", line)
         cleaned.append(line)
-    return cleaned
+    normalized = []
+    prev_blank = False
+    for line in cleaned:
+        is_blank = line.strip() == ""
+        if is_blank and prev_blank:
+            continue
+        normalized.append(line)
+        prev_blank = is_blank
+    while normalized and normalized[0].strip() == "":
+        normalized.pop(0)
+    while normalized and normalized[-1].strip() == "":
+        normalized.pop()
+    return normalized
 
 
 def print_toc(sections, json_mode=False):
