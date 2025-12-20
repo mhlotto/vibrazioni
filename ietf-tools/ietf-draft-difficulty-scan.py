@@ -33,8 +33,8 @@ from typing import List, Dict, Any, Optional, Tuple
 
 
 RFC2119_WORDS = [
-    "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
-    "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", "OPTIONAL",
+    "MUST NOT", "SHALL NOT", "SHOULD NOT",
+    "MUST", "SHALL", "SHOULD", "REQUIRED", "RECOMMENDED", "MAY", "OPTIONAL",
 ]
 
 # Heuristic markers for formats / blocks we generally want to parse deterministically.
@@ -57,8 +57,8 @@ GRAMMAR_MARKERS = {
         r"::=", r"\bSEQUENCE\b", r"\bCHOICE\b", r"\bINTEGER\b", r"\bOCTET STRING\b",
     ],
     "json": [
-        r'"\\s*[^"]+\\s*"\\s*:',
-        r"\\btrue\\b|\\bfalse\\b|\\bnull\\b",
+        r'"\s*[^"]+\s*"\s*:',
+        r"\btrue\b|\bfalse\b|\bnull\b",
     ],
 }
 
@@ -234,12 +234,10 @@ def emit_filtered_draft(
 
 
 def count_rfc2119(text: str) -> Dict[str, int]:
-    counts = {}
-    # Count multi-word first to avoid double counting MUST inside MUST NOT
-    for w in ["MUST NOT", "SHALL NOT", "SHOULD NOT"]:
-        counts[w] = len(re.findall(rf"\b{re.escape(w)}\b", text))
-    for w in ["MUST", "SHALL", "SHOULD", "MAY", "REQUIRED", "RECOMMENDED", "OPTIONAL"]:
-        counts[w] = len(re.findall(rf"\b{re.escape(w)}\b", text))
+    counts = {w: 0 for w in RFC2119_WORDS}
+    pattern = re.compile(r"\b(" + "|".join(re.escape(w) for w in RFC2119_WORDS) + r")\b")
+    for match in pattern.findall(text):
+        counts[match] += 1
     counts["TOTAL"] = sum(counts.values())
     return counts
 
@@ -314,8 +312,6 @@ def compute_severity(metrics: Dict[str, Any], flags: List[str]) -> int:
         score += 14
 
     # grammar blocks / schemas
-    if metrics.get("grammar_kinds"):
-        score += 10
     if metrics.get("grammar_kinds"):
         score += 18 + 6 * max(0, len(metrics["grammar_kinds"]) - 1)
     if metrics.get("has_hex_dump"):
@@ -521,4 +517,3 @@ def main(argv: List[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv))
-

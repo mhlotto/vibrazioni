@@ -20,13 +20,21 @@ PAGE_HEADER_RE = re.compile(r"^\s*([A-Z].*Draft|Internet-Draft|IETF).*", re.I)
 PAGE_FOOTER_RE = re.compile(r"^\s*Page\s+\d+", re.I)
 RUNNING_TITLE_RE = re.compile(r".*Internet-Draft.*", re.I)
 EXPIRES_RE = re.compile(r".*Expires\s+.*", re.I)
+TOC_DOT_LEADER_RE = re.compile(r"\.{2,}\s*\d+\s*$")
 
 
 def parse_sections(lines):
     sections = []
+    n = len(lines)
     for i, line in enumerate(lines):
         m = SECTION_RE.match(line)
         if m:
+            if TOC_DOT_LEADER_RE.search(line):
+                continue
+            prev_blank = (i == 0) or (lines[i - 1].strip() == "")
+            next_blank = (i + 1 >= n) or (lines[i + 1].strip() == "")
+            if not (prev_blank and next_blank):
+                continue
             num = m.group(1)   # no trailing dot
             title = m.group(2)
             sections.append((num, title, i))
@@ -175,4 +183,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
