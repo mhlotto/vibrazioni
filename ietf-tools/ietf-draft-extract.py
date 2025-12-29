@@ -16,10 +16,11 @@ from pathlib import Path
 SECTION_RE = re.compile(r"^(\d+(?:\.\d+)*)(?:\.)?\s+(.*\S)\s*$")
 
 # Typical IETF boilerplate patterns
-PAGE_HEADER_RE = re.compile(r"^\s*([A-Z].*Draft|Internet-Draft|IETF).*", re.I)
-PAGE_FOOTER_RE = re.compile(r"^\s*Page\s+\d+", re.I)
-RUNNING_TITLE_RE = re.compile(r".*Internet-Draft.*", re.I)
-EXPIRES_RE = re.compile(r".*Expires\s+.*", re.I)
+PAGE_HEADER_RE = re.compile(
+    r"^\s*(?:Internet-Draft|IETF|RFC)\b.*\s{2,}\S.*$",
+    re.I,
+)
+PAGE_FOOTER_RE = re.compile(r"^\s*.*\[\s*Page\s+\d+\s*\]\s*$", re.I)
 TOC_DOT_LEADER_RE = re.compile(r"\.{2,}\s*\d+\s*$")
 
 
@@ -92,10 +93,6 @@ def clean_lines(lines):
             continue
         if PAGE_FOOTER_RE.match(line):
             continue
-        if RUNNING_TITLE_RE.match(line):
-            continue
-        if EXPIRES_RE.match(line):
-            continue
         if re.fullmatch(r"-{5,}", line.strip()):
             continue
         line = re.sub(r"\s+\[Page\s+\d+\]$", "", line)
@@ -137,10 +134,29 @@ def main():
     ap.add_argument("--toc", action="store_true", help="Print the Table of Contents and exit")
     ap.add_argument("-j", "--json", action="store_true", help="Output JSON")
     ap.add_argument("--clean", action="store_true", help="Remove IETF draft headers/footers/boilerplate")
+    ap.add_argument(
+        "--full-clean",
+        action="store_true",
+        help="Output entire draft with headers/footers/boilerplate removed (no section query)",
+    )
     args = ap.parse_args()
 
     text = Path(args.file).read_text(encoding="utf-8", errors="replace")
     lines = text.splitlines()
+
+    if args.full_clean:
+        if args.toc:
+            print("Cannot combine --full-clean with --toc.", file=sys.stderr)
+            sys.exit(1)
+        if args.query is not None:
+            print("No section query should be provided with --full-clean.", file=sys.stderr)
+            sys.exit(1)
+        if args.json:
+            print("--json is not supported with --full-clean.", file=sys.stderr)
+            sys.exit(1)
+        print("\n".join(clean_lines(lines)))
+        return
+
     sections = parse_sections(lines)
 
     # --- TOC MODE ---

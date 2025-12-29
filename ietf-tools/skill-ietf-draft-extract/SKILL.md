@@ -15,6 +15,12 @@ List TOC:
 python3 skill-ietf-draft-extract/scripts/ietf-draft-extract.py --toc path/to/draft.txt
 ```
 
+Full clean of entire draft (no section query):
+
+```bash
+python3 skill-ietf-draft-extract/scripts/ietf-draft-extract.py --full-clean path/to/draft.txt
+```
+
 Extract section(s) with boilerplate removed (always use --clean):
 
 ```bash
