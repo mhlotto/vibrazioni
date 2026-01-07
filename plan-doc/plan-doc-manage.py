@@ -442,6 +442,60 @@ def toggle_subtask(args) -> None:
     lines[subtask.index] = ensure_newline(f"{indent}- [{new_box}] {id_part}{text}")
     write_lines(path, lines)
 
+def match_value(needle: str, text: str, use_regex: bool) -> bool:
+    if use_regex:
+        return re.search(needle, text, re.IGNORECASE) is not None
+    return needle.lower() in text.lower()
+
+
+def find_items(args) -> None:
+    lines = read_lines(Path(args.file))
+    groups = parse_groups(lines)
+    needle = args.query
+    use_regex = args.regex
+    include_parent_titles = args.parent_titles
+
+    search_groups = args.groups
+    search_tasks = args.tasks
+    search_subtasks = args.subtasks
+    if not (search_groups or search_tasks or search_subtasks):
+        search_groups = True
+        search_tasks = True
+        search_subtasks = True
+
+    for group in groups:
+        group_line = lines[group.start].rstrip("\n")
+        group_match_text = f"{group.id or ''} {group.name} {group_line}".strip()
+        gid = group.id or "-"
+        if search_groups and match_value(needle, group_match_text, use_regex):
+            print(f"GROUP [{gid}] {group.name}: {group_line}")
+
+        tasks = parse_tasks(lines, group)
+        task_by_index = {t.index: t for t in tasks}
+        for task in tasks:
+            kind = "TASK" if task.indent == 0 else "SUBTASK"
+            if task.indent == 0 and not search_tasks:
+                continue
+            if task.indent != 0 and not search_subtasks:
+                continue
+            task_line = lines[task.index].rstrip("\n")
+            match_text = f"{task.id or ''} {task.text} {task_line}".strip()
+            if match_value(needle, match_text, use_regex):
+                if task.indent != 0:
+                    parent_task = task_by_index.get(task.parent_index) if task.parent_index is not None else None
+                    parent_line = lines[parent_task.index].rstrip("\n") if parent_task else ""
+                    parent_id = parent_task.id if parent_task and parent_task.id else "-"
+                    clean_task_line = task_line.lstrip()
+                    if include_parent_titles:
+                        print(f"{kind} [{gid}] {group.name} | {parent_line}: {clean_task_line}")
+                    else:
+                        print(f"{kind} [{gid}] [{parent_id}]: {clean_task_line}")
+                else:
+                    if include_parent_titles:
+                        print(f"{kind} [{gid}] {group.name}: {task_line}")
+                    else:
+                        print(f"{kind} [{gid}]: {task_line}")
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Manage PLAN####.md files.")
@@ -538,6 +592,16 @@ def build_parser() -> argparse.ArgumentParser:
     subtasks_x.add_argument("--task", required=True, help="Task id or text")
     subtasks_x.add_argument("--subtask", required=True, help="Subtask id or text")
     subtasks_x.set_defaults(func=toggle_subtask)
+
+    find_p = sub.add_parser("find", help="Find groups, tasks, and subtasks")
+    find_p.add_argument("--file", required=True, help="PLAN file path")
+    find_p.add_argument("query", help="Search string or regex")
+    find_p.add_argument("--regex", action="store_true", help="Treat query as regex")
+    find_p.add_argument("--groups", action="store_true", help="Search group headings")
+    find_p.add_argument("--tasks", action="store_true", help="Search tasks")
+    find_p.add_argument("--subtasks", action="store_true", help="Search subtasks")
+    find_p.add_argument("--parent-titles", action="store_true", help="Include group and parent task titles")
+    find_p.set_defaults(func=find_items)
 
     return parser
 

@@ -61,8 +61,44 @@ python3 skill-plan-doc-manage/scripts/plan-doc-manage.py \
   subtasks add --file PLAN0002.md --group GPabc --task Tabc12 "Write fixtures"
 ```
 
+Find items (default searches groups, tasks, and subtasks):
+
+```bash
+python3 skill-plan-doc-manage/scripts/plan-doc-manage.py \
+  find --file PLAN0002.md "receipt"
+```
+
+Regex search only in tasks:
+
+```bash
+python3 skill-plan-doc-manage/scripts/plan-doc-manage.py \
+  find --file PLAN0002.md --tasks --regex "demo\\s+runthrough"
+```
+
+Restrict to groups only:
+
+```bash
+python3 skill-plan-doc-manage/scripts/plan-doc-manage.py \
+  find --file PLAN0002.md --groups "integration"
+```
+
+Restrict to subtasks only:
+
+```bash
+python3 skill-plan-doc-manage/scripts/plan-doc-manage.py \
+  find --file PLAN0002.md --subtasks "receipt"
+```
+
+Include parent titles in find output:
+
+```bash
+python3 skill-plan-doc-manage/scripts/plan-doc-manage.py \
+  find --file PLAN0002.md --parent-titles "receipt"
+```
+
 ## Notes
 
+- Substring searches are case-insensitive.
 - Group selectors accept IDs (GPxxx) or name substrings.
 - Task and subtask selectors accept IDs (Txxxxx) or text substrings.
 - The tool preserves existing Markdown structure and only edits matching lines.
