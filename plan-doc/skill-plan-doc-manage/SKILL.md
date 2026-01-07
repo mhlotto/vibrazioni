@@ -102,3 +102,5 @@ python3 skill-plan-doc-manage/scripts/plan-doc-manage.py \
 - Group selectors accept IDs (GPxxx) or name substrings.
 - Task and subtask selectors accept IDs (Txxxxx) or text substrings.
 - The tool preserves existing Markdown structure and only edits matching lines.
+- If a user does not specify the group a task should be added to, please ask them
+  to specify and offer some examples (ideally appropriate ones).
