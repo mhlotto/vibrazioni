@@ -55,26 +55,32 @@ func isStdinPiped() bool {
 	return (fi.Mode() & os.ModeCharDevice) == 0
 }
 
-func loadTemplateVarsFromArgs(file string) *wwlp.TemplateVars {
+func loadTemplateVarsFromArgs(file string, quiet bool) *wwlp.TemplateVars {
 	var (
-		tv  *wwlp.TemplateVars
-		err error
+		tv       *wwlp.TemplateVars
+		warnings []string
+		err      error
 	)
 	switch {
 	case file != "":
 		if file == "-" {
-			tv, err = wwlp.LoadTemplateVars(os.Stdin)
+			tv, warnings, err = wwlp.LoadTemplateVars(os.Stdin)
 		} else {
-			tv, err = wwlp.LoadTemplateVarsFile(file)
+			tv, warnings, err = wwlp.LoadTemplateVarsFile(file)
 		}
 	case isStdinPiped():
-		tv, err = wwlp.LoadTemplateVars(os.Stdin)
+		tv, warnings, err = wwlp.LoadTemplateVars(os.Stdin)
 	default:
-		tv, err = wwlp.LoadTemplateVarsURL(defaultTemplateVarsURL)
+		tv, warnings, err = wwlp.LoadTemplateVarsURL(defaultTemplateVarsURL)
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
+	}
+	if !quiet {
+		for _, w := range warnings {
+			fmt.Fprintf(os.Stderr, "Warning: JSON shape changed: %s\n", w)
+		}
 	}
 	return tv
 }
@@ -82,12 +88,13 @@ func loadTemplateVarsFromArgs(file string) *wwlp.TemplateVars {
 func headlines(args []string) {
 	fs := flag.NewFlagSet("headlines", flag.ExitOnError)
 	file := fs.String("file", "", "Input JSON file (or - for stdin)")
+	quiet := fs.Bool("quiet-warning", false, "Suppress JSON shape warnings")
 	source := fs.String("source", "top", "Source: top, additional, headline")
 	listIndex := fs.Int("list", 0, "Headline list index (for source=headline)")
 	limit := fs.Int("limit", 0, "Max items (0 means all)")
 	fs.Parse(args)
 
-	tv := loadTemplateVarsFromArgs(*file)
+	tv := loadTemplateVarsFromArgs(*file, *quiet)
 	articles, err := wwlp.GetArticles(tv, *source, *listIndex)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -106,9 +113,10 @@ func headlines(args []string) {
 func headlineLists(args []string) {
 	fs := flag.NewFlagSet("headline-lists", flag.ExitOnError)
 	file := fs.String("file", "", "Input JSON file (or - for stdin)")
+	quiet := fs.Bool("quiet-warning", false, "Suppress JSON shape warnings")
 	fs.Parse(args)
 
-	tv := loadTemplateVarsFromArgs(*file)
+	tv := loadTemplateVarsFromArgs(*file, *quiet)
 	for _, line := range wwlp.HeadlineListTitles(tv) {
 		fmt.Println(line)
 	}
@@ -117,11 +125,12 @@ func headlineLists(args []string) {
 func weather(args []string) {
 	fs := flag.NewFlagSet("weather", flag.ExitOnError)
 	file := fs.String("file", "", "Input JSON file (or - for stdin)")
+	quiet := fs.Bool("quiet-warning", false, "Suppress JSON shape warnings")
 	mode := fs.String("mode", "three-day", "Mode: current, three-day, hourly, seven-day")
 	limit := fs.Int("limit", 0, "Max items for hourly or seven-day")
 	fs.Parse(args)
 
-	tv := loadTemplateVarsFromArgs(*file)
+	tv := loadTemplateVarsFromArgs(*file, *quiet)
 	if tv.Weather == nil {
 		fmt.Fprintln(os.Stderr, "error: weather missing")
 		os.Exit(1)
@@ -196,11 +205,12 @@ func formatPrecip(p string) string {
 func alerts(args []string) {
 	fs := flag.NewFlagSet("alerts", flag.ExitOnError)
 	file := fs.String("file", "", "Input JSON file (or - for stdin)")
+	quiet := fs.Bool("quiet-warning", false, "Suppress JSON shape warnings")
 	alertType := fs.String("type", "", "Alert type name")
 	listTypes := fs.Bool("list-types", false, "List available alert types")
 	fs.Parse(args)
 
-	tv := loadTemplateVarsFromArgs(*file)
+	tv := loadTemplateVarsFromArgs(*file, *quiet)
 
 	if *listTypes || *alertType == "" {
 		for _, t := range wwlp.AlertTypes(tv) {
