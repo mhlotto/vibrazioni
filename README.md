@@ -1,7 +1,6 @@
 # vibrazioni
 
-Simple tooling repo (some vibe/llm assisted, some not, some meant for use in
-llm context, some not whatever)
+Simple tooling repo (mostly vibe play)
 
 - **ietf-tools**: Utilities for IETF draft and RFC text handling. Includes section extraction, difficulty scanning, tests, and skill templates with copy scripts.
 - **gosec-json**: CLI-friendly extraction for gosec JSON reports plus a skill template and copy script.
