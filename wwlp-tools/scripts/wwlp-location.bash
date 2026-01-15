@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+curl 'https://geolocation.onetrust.com/cookieconsentpub/v1/geo/location' \
+  -H 'sec-ch-ua-platform: "macOS"' \
+  -H 'Referer: https://www.wwlp.com/' \
+  -H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36' \
+  -H 'accept: application/json' \
+  -H 'sec-ch-ua: "Brave";v="143", "Chromium";v="143", "Not A(Brand";v="24"' \
+  -H 'sec-ch-ua-mobile: ?0'
