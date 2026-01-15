@@ -37,7 +37,7 @@ func LoadTemplateVarsURL(url string) (*TemplateVars, []string, error) {
 		return nil, nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36")
+	req.Header.Set("User-Agent", defaultUserAgent)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -49,6 +49,8 @@ func LoadTemplateVarsURL(url string) (*TemplateVars, []string, error) {
 	}
 	return LoadTemplateVars(resp.Body)
 }
+
+const defaultUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
 
 func LoadTemplateVarsBytes(data []byte) (*TemplateVars, []string, error) {
 	warnings := ValidateTemplateVarsShape(data)

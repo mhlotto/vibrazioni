@@ -1,17 +1,17 @@
 package wwlp
 
 type TemplateVars struct {
-	TopStories          *StoryList     `json:"top_stories"`
-	AdditionalTopStories *StoryList    `json:"additional_top_stories"`
-	HeadlineLists       []HeadlineList `json:"headline_lists"`
-	Weather             *Weather       `json:"weather"`
-	AlertBanners        *AlertBanners  `json:"alert_banners"`
+	TopStories           *StoryList     `json:"top_stories"`
+	AdditionalTopStories *StoryList     `json:"additional_top_stories"`
+	HeadlineLists        []HeadlineList `json:"headline_lists"`
+	Weather              *Weather       `json:"weather"`
+	AlertBanners         *AlertBanners  `json:"alert_banners"`
 }
 
 type StoryList struct {
-	Title    string     `json:"title"`
-	Articles []Article  `json:"articles"`
-	ReadMore *ReadMore  `json:"read_more"`
+	Title    string    `json:"title"`
+	Articles []Article `json:"articles"`
+	ReadMore *ReadMore `json:"read_more"`
 }
 
 type HeadlineList struct {
@@ -27,14 +27,14 @@ type ReadMore struct {
 }
 
 type Article struct {
-	ID            int          `json:"id"`
-	Title         string       `json:"title"`
-	HomePageTitle string       `json:"home_page_title"`
-	Link          string       `json:"link"`
-	Category      *Category    `json:"category"`
-	Date          *DateInfo    `json:"date"`
-	MediaTypeIcon *MediaType   `json:"media_type_icon"`
-	PostType      string       `json:"post_type"`
+	ID            int        `json:"id"`
+	Title         string     `json:"title"`
+	HomePageTitle string     `json:"home_page_title"`
+	Link          string     `json:"link"`
+	Category      *Category  `json:"category"`
+	Date          *DateInfo  `json:"date"`
+	MediaTypeIcon *MediaType `json:"media_type_icon"`
+	PostType      string     `json:"post_type"`
 }
 
 type Category struct {
@@ -81,12 +81,14 @@ type HourlyForecast struct {
 }
 
 type DailyForecast struct {
-	DayOfWeek     string `json:"day_of_week"`
+	DayOfWeek      string `json:"day_of_week"`
 	MaxTemperature string `json:"max_temperature"`
 	MinTemperature string `json:"min_temperature"`
-	PrecipChance  string `json:"precip_chance"`
-	ShortPhrase   string `json:"short_phrase"`
-	Time          string `json:"time"`
+	PrecipChance   string `json:"precip_chance"`
+	ShortPhrase    string `json:"short_phrase"`
+	Time           string `json:"time"`
+	DayNarrative   string `json:"day_narrative"`
+	NightNarrative string `json:"night_narrative"`
 }
 
 type AlertBanners struct {
@@ -99,4 +101,16 @@ type AlertMessage struct {
 	Start   any    `json:"start"`
 	PostID  int    `json:"post_id"`
 	UUID    string `json:"uuid"`
+}
+
+type ForecastDiscussion struct {
+	Headline       string
+	Description    string
+	URL            string
+	DatePublished  string
+	DateModified   string
+	ArticleBody    string
+	ArticleSection string
+	Genre          []string
+	Authors        []string
 }

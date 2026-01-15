@@ -39,13 +39,14 @@ Commands:
   weather         Show weather summaries
   alerts          Show alert messages
 
-Default input is fetched from https://www.wwlp.com/wp-json/lakana/v1/template-variables/
-Use --file for a saved JSON file.
+Default input is fetched from WWLP endpoints.
+Use --file for saved JSON or HTML.
 `
 	fmt.Fprint(os.Stderr, msg)
 }
 
 const defaultTemplateVarsURL = "https://www.wwlp.com/wp-json/lakana/v1/template-variables/"
+const defaultForecastDiscussionURL = "https://www.wwlp.com/weather/todays-forecast/forecast-discussion/"
 
 func isStdinPiped() bool {
 	fi, err := os.Stdin.Stat()
@@ -124,11 +125,18 @@ func headlineLists(args []string) {
 
 func weather(args []string) {
 	fs := flag.NewFlagSet("weather", flag.ExitOnError)
-	file := fs.String("file", "", "Input JSON file (or - for stdin)")
+	file := fs.String("file", "", "Input file (JSON/HTML or - for stdin)")
 	quiet := fs.Bool("quiet-warning", false, "Suppress JSON shape warnings")
-	mode := fs.String("mode", "three-day", "Mode: current, three-day, hourly, seven-day")
+	mode := fs.String("mode", "forecast", "Mode: forecast (default), current, three-day, hourly, seven-day")
 	limit := fs.Int("limit", 0, "Max items for hourly or seven-day")
+	short := fs.Bool("short", false, "Short output for seven-day")
 	fs.Parse(args)
+
+	if *mode == "forecast" {
+		discussion := loadForecastDiscussionFromArgs(*file)
+		printForecastDiscussion(discussion)
+		return
+	}
 
 	tv := loadTemplateVarsFromArgs(*file, *quiet)
 	if tv.Weather == nil {
@@ -153,10 +161,53 @@ func weather(args []string) {
 	case "hourly":
 		printHourly(tv.Weather.Hourly, *limit)
 	case "seven-day":
-		printSevenDay(tv.Weather.SevenDay, *limit)
+		printSevenDay(tv.Weather.SevenDay, *limit, *short)
 	default:
 		fmt.Fprintf(os.Stderr, "error: unknown mode: %s\n", *mode)
 		os.Exit(1)
+	}
+}
+
+func loadForecastDiscussionFromArgs(file string) *wwlp.ForecastDiscussion {
+	var (
+		article *wwlp.ForecastDiscussion
+		err     error
+	)
+	switch {
+	case file != "":
+		if file == "-" {
+			article, err = wwlp.LoadForecastDiscussion(os.Stdin)
+		} else {
+			article, err = wwlp.LoadForecastDiscussionFile(file)
+		}
+	default:
+		article, err = wwlp.LoadForecastDiscussionURL(defaultForecastDiscussionURL)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	return article
+}
+
+func printForecastDiscussion(article *wwlp.ForecastDiscussion) {
+	if article.Headline != "" {
+		fmt.Printf("Headline: %s\n", article.Headline)
+	}
+	if len(article.Authors) > 0 {
+		fmt.Printf("Author: %s\n", strings.Join(article.Authors, ", "))
+	}
+	if article.DatePublished != "" {
+		fmt.Printf("Published: %s\n", article.DatePublished)
+	}
+	if article.DateModified != "" {
+		fmt.Printf("Modified: %s\n", article.DateModified)
+	}
+	if article.Headline != "" || len(article.Authors) > 0 || article.DatePublished != "" || article.DateModified != "" {
+		fmt.Println()
+	}
+	if article.ArticleBody != "" {
+		fmt.Println(wwlp.CleanForecastText(article.ArticleBody))
 	}
 }
 
@@ -184,13 +235,23 @@ func printHourly(items []wwlp.HourlyForecast, limit int) {
 	}
 }
 
-func printSevenDay(items []wwlp.DailyForecast, limit int) {
+func printSevenDay(items []wwlp.DailyForecast, limit int, short bool) {
 	for i, d := range items {
 		if limit > 0 && i >= limit {
 			break
 		}
 		precip := formatPrecip(d.PrecipChance)
+		if short || (d.DayNarrative == "" && d.NightNarrative == "") {
+			fmt.Printf("%s: %sF/%sF %s%s\n", d.DayOfWeek, d.MaxTemperature, d.MinTemperature, d.ShortPhrase, precip)
+			continue
+		}
 		fmt.Printf("%s: %sF/%sF %s%s\n", d.DayOfWeek, d.MaxTemperature, d.MinTemperature, d.ShortPhrase, precip)
+		if d.DayNarrative != "" {
+			fmt.Printf("  Day: %s\n", d.DayNarrative)
+		}
+		if d.NightNarrative != "" {
+			fmt.Printf("  Night: %s\n", d.NightNarrative)
+		}
 	}
 }
 
