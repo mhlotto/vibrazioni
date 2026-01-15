@@ -1,0 +1,17 @@
+curl 'https://www.wwlp.com/weather/todays-forecast/forecast-discussion/' \
+  -H 'accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8' \
+  -H 'accept-language: en-US,en;q=0.9' \
+  -H 'cache-control: max-age=0' \
+  -b '_pxhd=ba928261410f7e1b31c6dd8a13bf1ebcb1b39026d53694a2b966f8af7e79da2a:c4a4c934-f217-11f0-96a6-522047c83c9f; _pxvid=c4a4c934-f217-11f0-96a6-522047c83c9f; pxcts=c4ebe8d4-f217-11f0-ba58-20e824319e90; last_visit_bc=1768484435174; referralId=Direct; BCSessionID=ccbf7375-8b67-429b-b05e-ce3d30067b9c; _px2=eyJ1IjoiYzRiMjNiYjAtZjIxNy0xMWYwLWI3NjktYzljYzdmZThiNjQ0IiwidiI6ImM0YTRjOTM0LWYyMTctMTFmMC05NmE2LTUyMjA0N2M4M2M5ZiIsInQiOjE3Njg0ODQ3NDQ0NTIsImgiOiI1NTQyZmRlMDVmMjlmNGE0NTY3NjY2YmY0ZGZiZjQ4NGQyZTc2NTU3NTliYTAxYTAyZWZhZDIwZjk4ZjBhNjE2In0=' \
+  -H 'priority: u=0, i' \
+  -H 'referer: https://www.wwlp.com/weather/todays-forecast/forecast-discussion/' \
+  -H 'sec-ch-ua: "Brave";v="143", "Chromium";v="143", "Not A(Brand";v="24"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "macOS"' \
+  -H 'sec-fetch-dest: document' \
+  -H 'sec-fetch-mode: navigate' \
+  -H 'sec-fetch-site: same-origin' \
+  -H 'sec-fetch-user: ?1' \
+  -H 'sec-gpc: 1' \
+  -H 'upgrade-insecure-requests: 1' \
+  -H 'user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
