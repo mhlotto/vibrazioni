@@ -66,3 +66,14 @@ func TestCleanForecastText(t *testing.T) {
 		t.Fatalf("expected spacing cleanup, got: %q", got)
 	}
 }
+
+func TestCleanForecastTextStripsPromo(t *testing.T) {
+	input := "Forecast text. The 22News Storm Team Weather Line: 413-377-22WX."
+	got := CleanForecastText(input)
+	if strings.Contains(got, "22News Storm Team Weather Line") {
+		t.Fatalf("expected promo line to be removed, got: %q", got)
+	}
+	if !strings.Contains(got, "Forecast text.") {
+		t.Fatalf("expected forecast text to remain, got: %q", got)
+	}
+}

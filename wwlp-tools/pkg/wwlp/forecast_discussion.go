@@ -119,11 +119,59 @@ func CleanForecastText(text string) string {
 	text = html.UnescapeString(text)
 	text = strings.ReplaceAll(text, "\u00a0", " ")
 	text = strings.Join(strings.Fields(text), " ")
+	text = stripForecastPromo(text)
 	text = forecastNumberWordRe.ReplaceAllString(text, "$1 $2")
 	text = forecastWordRe.ReplaceAllString(text, "$1 $2")
 	text = forecastHeadingRe.ReplaceAllString(text, "\n$1")
 	text = forecastTodayRe.ReplaceAllString(text, "\n$1")
-	return strings.TrimSpace(text)
+	text = strings.TrimSpace(text)
+	return wrapText(text, 80)
+}
+
+func stripForecastPromo(text string) string {
+	marker := "The 22News Storm Team Weather Line:"
+	if idx := strings.Index(text, marker); idx != -1 {
+		return strings.TrimSpace(text[:idx])
+	}
+	return text
+}
+
+func wrapText(text string, width int) string {
+	if width <= 0 {
+		return text
+	}
+	parts := strings.Split(text, "\n")
+	for i, part := range parts {
+		parts[i] = wrapLine(part, width)
+	}
+	return strings.Join(parts, "\n")
+}
+
+func wrapLine(line string, width int) string {
+	words := strings.Fields(line)
+	if len(words) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	col := 0
+	for _, word := range words {
+		wordLen := len(word)
+		if col == 0 {
+			b.WriteString(word)
+			col = wordLen
+			continue
+		}
+		if col+1+wordLen > width {
+			b.WriteByte('\n')
+			b.WriteString(word)
+			col = wordLen
+			continue
+		}
+		b.WriteByte(' ')
+		b.WriteString(word)
+		col += 1 + wordLen
+	}
+	return b.String()
 }
 
 func matchesForecastDiscussion(raw map[string]any) bool {
