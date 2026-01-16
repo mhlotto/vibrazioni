@@ -1,6 +1,6 @@
 ---
 name: skill-plan-doc-manage
-description: Create and manage PLAN####.md files using the bundled plan-doc-manage.py script. Use for initializing plans, listing groups, and adding/renaming/moving/toggling tasks and subtasks.
+description: Create and manage PLAN####.md files using the bundled plan-doc-manage.py script. Use for initializing plans, listing groups, and adding/renaming/moving/toggling tasks and subtasks. One should only ever use 7-bit ascii with this utility, unless the user demands otherwise.
 ---
 
 # Plan Doc Manage
