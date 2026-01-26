@@ -33,3 +33,10 @@ The directory `testdata` has test inputs and output. I describe them here:
 | 007 | extract scripts with `--type "foobar" --id "zhang"` | in007.html | out007.txt|
 | 008 | extract count of scripts with `--type "foobar" --count` | in008.html | out008.txt|
 | 009 | extract 2nd fooba script  with `--type "foobar" --only 1` | in009.html | out009.txt|
+
+
+# example kinda use
+
+```
+curl https://foobasite | python3 html-scripttags-extract.py --type "application/json" --clean | jq .
+```
