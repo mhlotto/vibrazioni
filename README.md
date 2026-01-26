@@ -7,4 +7,5 @@ Simple tooling repo (mostly vibe play)
 - **govulncheck-json**: CLI-friendly extraction for govulncheck JSON output plus a skill template and copy script.
 - **plan-doc**: Plan document manager for PLAN####.md files, a sample plan format, and a skill template with copy script.
 - **git-tools**: Small git helpers like formatting untracked files from git status into a git add command.
+- **html-scripttags**: Extract HTML script tags with attribute filtering, tests, and a skill template with copy script.
 - **wwlp-tools**: Go CLI for extracting news from WWLP JSON responding endpoint.

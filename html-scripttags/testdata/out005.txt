@@ -1,0 +1,2 @@
+<script type="foobar">script stuff</script>
+<script type="foobar">other</script>
