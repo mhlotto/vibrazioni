@@ -1,0 +1,1 @@
+<script type="foobar" id="zhang">other</script>

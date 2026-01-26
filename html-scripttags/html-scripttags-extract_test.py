@@ -40,6 +40,21 @@ CASES = [
         "input": "in006.html",
         "expected": "out006.txt",
     },
+    {
+        "args": ["--type", "foobar", "--id", "zhang"],
+        "input": "in007.html",
+        "expected": "out007.txt",
+    },
+    {
+        "args": ["--type", "foobar", "--count"],
+        "input": "in008.html",
+        "expected": "out008.txt",
+    },
+    {
+        "args": ["--type", "foobar", "--only", "1"],
+        "input": "in009.html",
+        "expected": "out009.txt",
+    },
 ]
 
 

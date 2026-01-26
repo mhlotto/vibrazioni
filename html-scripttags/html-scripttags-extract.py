@@ -109,6 +109,15 @@ def main():
     parser.add_argument("--id", dest="id_value", help="Match script id attribute")
     parser.add_argument("--src", dest="src_value", help="Match script src attribute")
     parser.add_argument(
+        "--count",
+        action="store_true",
+        help="Output number of matched scripts and exit",
+    )
+    parser.add_argument(
+        "--only",
+        help="Only output specific 0-based indices (comma-separated)",
+    )
+    parser.add_argument(
         "--clean",
         action="store_true",
         help="Remove <script> and </script> tags from output",
@@ -117,6 +126,19 @@ def main():
 
     html = read_input(args.file)
     tags = extract_scripts(html, args.type_value, args.id_value, args.src_value)
+
+    if args.count:
+        output = f"{len(tags)}\n"
+        write_output(args.out, output)
+        return
+
+    if args.only:
+        indices = parse_only_indices(args.only)
+        selected = []
+        for idx in indices:
+            if 0 <= idx < len(tags):
+                selected.append(tags[idx])
+        tags = selected
 
     outputs = []
     for tag in tags:
@@ -130,6 +152,18 @@ def main():
     if output and not output.endswith("\n"):
         output += "\n"
     write_output(args.out, output)
+
+
+def parse_only_indices(value):
+    indices = []
+    for part in value.split(","):
+        part = part.strip()
+        if part == "":
+            continue
+        if not part.isdigit():
+            raise SystemExit(f"error: --only expects non-negative integers, got '{part}'")
+        indices.append(int(part))
+    return indices
 
 
 if __name__ == "__main__":
