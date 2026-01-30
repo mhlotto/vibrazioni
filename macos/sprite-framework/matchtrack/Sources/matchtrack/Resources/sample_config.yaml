@@ -1,0 +1,64 @@
+match:
+  matchName: "Friendly_vs_Rivals"
+  teamName: "MyTeam"
+  startTimeUTC: "2026-01-29T19:00:00Z"
+
+ui:
+  grid:
+    enabled: true
+    cellSize: 40
+    origin: "bottomLeft"
+    margin: 16
+  drag:
+    enabled: true
+    activation: "immediate"
+    modifierKey: "option"
+    longPressSeconds: 0.25
+    showGridOverlay: true
+    snapOnDrop: true
+    preventDragIfClickedWithinSeconds: 0.12
+
+buttons:
+  - id: "start_match"
+    label: "Start Match"
+    group: "Markers"
+    size: "large"
+    statKey: "startMatch"
+    kind: "marker"
+
+  - id: "goal_for"
+    label: "Goal"
+    group: "Team"
+    size: "large"
+    statKey: "goals"
+    kind: "stat"
+
+  - id: "shot_on"
+    label: "Shot On"
+    group: "Team"
+    size: "medium"
+    statKey: "shotsOnTarget"
+    kind: "stat"
+
+  - id: "foul"
+    label: "Foul"
+    group: "Team"
+    size: "medium"
+    statKey: "fouls"
+    kind: "stat"
+
+  - id: "p1_pass_complete"
+    label: "P1 Pass+"
+    group: "Players"
+    size: "small"
+    statKey: "passesComplete"
+    playerId: "p1"
+    kind: "stat"
+
+  - id: "p1_pass_miss"
+    label: "P1 Pass-"
+    group: "Players"
+    size: "small"
+    statKey: "passesMiss"
+    playerId: "p1"
+    kind: "stat"
