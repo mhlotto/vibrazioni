@@ -10,6 +10,7 @@ final class SessionManager {
 
     private var logHandle: FileHandle?
     private let logQueue = DispatchQueue(label: "matchtrack.log-writes")
+    private let statsStore: StatsStore?
     private var stats = StatsSnapshot()
     private var config: AppConfig?
     private var timeNormalizer = TimeNormalization()
@@ -23,6 +24,10 @@ final class SessionManager {
     private var sessionStartDateUTC: Date = Date()
     private var sessionStartUptime: TimeInterval = ProcessInfo.processInfo.systemUptime
 
+    init(statsStore: StatsStore? = nil) {
+        self.statsStore = statsStore
+    }
+
     func startSession(config: AppConfig) throws {
         shutdown()
         self.config = config
@@ -30,6 +35,13 @@ final class SessionManager {
         sessionStartUptime = ProcessInfo.processInfo.systemUptime
         let hasMarkers = config.buttons.contains { $0.kind == .marker }
         timeNormalizer = TimeNormalization(hasMarkers: hasMarkers)
+        stats = StatsSnapshot()
+        if let statsStore {
+            let snapshot = stats
+            Task { @MainActor in
+                statsStore.update(snapshot: snapshot)
+            }
+        }
 
         let fm = FileManager.default
         let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first ?? fm.homeDirectoryForCurrentUser
@@ -67,6 +79,12 @@ final class SessionManager {
         let elapsed = elapsedSeconds()
         let matchTime = timeNormalizer.matchTimeEstimateSeconds(elapsedSeconds: elapsed)
         stats.increment(button: button)
+        if let statsStore {
+            let snapshot = stats
+            Task { @MainActor in
+                statsStore.update(snapshot: snapshot)
+            }
+        }
         let event = LogEvent(
             utcTimestamp: isoFormatter.string(from: Date()),
             monotonicElapsedSecondsSinceSessionStart: elapsed,
@@ -143,6 +161,11 @@ final class SessionManager {
         try? logHandle?.close()
         logHandle = nil
         sessionDirectory = nil
+        if let statsStore {
+            Task { @MainActor in
+                statsStore.reset()
+            }
+        }
     }
 
     func currentElapsedSeconds() -> Double {

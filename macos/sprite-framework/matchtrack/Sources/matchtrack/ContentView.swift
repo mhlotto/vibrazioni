@@ -18,8 +18,16 @@ struct ContentView: View {
     @State private var showImporter = false
     @State private var recentClicks: [ClickEntry] = []
     @State private var newSessionWindow: NewSessionWindowController?
+    @State private var statsWindow: StatsWindowController?
+    @StateObject private var statsStore: StatsStore
 
-    private let sessionManager = SessionManager()
+    private let sessionManager: SessionManager
+
+    init() {
+        let store = StatsStore()
+        _statsStore = StateObject(wrappedValue: store)
+        sessionManager = SessionManager(statsStore: store)
+    }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -62,6 +70,7 @@ struct ContentView: View {
         .onAppear {
             presentNewSessionWindow()
             NSApplication.shared.activate(ignoringOtherApps: true)
+            presentStatsWindow()
         }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.yaml]) { result in
             switch result {
@@ -188,6 +197,16 @@ struct ContentView: View {
         newSessionWindow = controller
         controller.showWindow(nil)
         NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+
+    private func presentStatsWindow() {
+        if let window = statsWindow?.window {
+            window.orderFront(nil)
+            return
+        }
+        let controller = StatsWindowController(statsStore: statsStore)
+        statsWindow = controller
+        controller.showWindow(nil)
     }
 }
 
