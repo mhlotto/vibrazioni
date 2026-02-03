@@ -256,7 +256,7 @@ def record_label(rec: Dict[str, Any]) -> str:
     time_iso = rec.get("visit_time_utc_iso") or ""
     title_short = title[:40] + ("..." if len(title) > 40 else "")
     host_short = host[:40] + ("..." if len(host) > 40 else "")
-    return f"{visit_id}\\n{host_short}\\n{title_short}\\n{time_iso}"
+    return f"{visit_id}\n{host_short}\n{title_short}\n{time_iso}"
 
 
 def build_dot(records: List[Dict[str, Any]]) -> str:
@@ -288,7 +288,7 @@ def build_dot(records: List[Dict[str, Any]]) -> str:
             continue
         edges.append((from_int, vid_int))
         if from_int not in nodes:
-            missing[from_int] = f"{from_int}\\n(ref)"
+            missing[from_int] = f"{from_int}\n(ref)"
 
     lines: List[str] = [
         "digraph G {",
