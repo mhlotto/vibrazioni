@@ -308,14 +308,282 @@ def build_dot(records: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def write_graph_html(records: List[Dict[str, Any]], out_path: str) -> None:
+    data_json = json.dumps(records).replace("</", "<\\/")
+    template = """<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Brave History Graph</title>
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+      background: #0c0f14;
+      color: #e6e6e6;
+    }
+    #wrap {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      height: 100vh;
+    }
+    #main {
+      position: relative;
+      overflow: auto;
+      border-right: 1px solid #1f2630;
+    }
+    #controls {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 10px 14px;
+      background: #121823;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      border-bottom: 1px solid #1f2630;
+    }
+    #details {
+      padding: 16px;
+      overflow: auto;
+    }
+    #details h2 {
+      margin-top: 0;
+      font-size: 16px;
+    }
+    .muted {
+      color: #9aa4b2;
+    }
+    .node {
+      cursor: pointer;
+      stroke-width: 1.5;
+    }
+    .edge {
+      stroke: #566274;
+      stroke-width: 1;
+      opacity: 0.7;
+    }
+    .lane-label {
+      fill: #9aa4b2;
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <div id="main">
+      <div id="controls">
+        <div>Scale</div>
+        <input id="scale" type="range" min="1" max="20" value="6">
+        <div class="muted" id="summary"></div>
+      </div>
+      <svg id="graph" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+    <div id="details">
+      <h2>Visit details</h2>
+      <div class="muted">Click a node</div>
+      <pre id="detail-json"></pre>
+    </div>
+  </div>
+<script>
+const RECORDS = __DATA_JSON__;
+
+const svg = document.getElementById("graph");
+const scaleInput = document.getElementById("scale");
+const summaryEl = document.getElementById("summary");
+const detailJson = document.getElementById("detail-json");
+
+function byIdMap(records) {
+  const map = new Map();
+  for (const r of records) {
+    map.set(Number(r.visit_id), r);
+  }
+  return map;
+}
+
+function hostFromUrl(url) {
+  try {
+    return new URL(url).hostname || url;
+  } catch (_) {
+    return url || "";
+  }
+}
+
+function hashColor(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  const hue = Math.abs(h) % 360;
+  return `hsl(${hue}, 60%, 55%)`;
+}
+
+function timeMs(rec) {
+  if (rec.visit_time_utc_iso) {
+    const t = Date.parse(rec.visit_time_utc_iso);
+    if (!Number.isNaN(t)) return t;
+  }
+  return null;
+}
+
+function buildRoots(records, byId) {
+  const rootMap = new Map();
+  const roots = new Map();
+  function getRoot(id) {
+    if (rootMap.has(id)) return rootMap.get(id);
+    let current = id;
+    const seen = new Set();
+    while (true) {
+      if (seen.has(current)) break;
+      seen.add(current);
+      const rec = byId.get(current);
+      if (!rec) break;
+      const from = Number(rec.from_visit || 0);
+      if (!from || !byId.has(from)) break;
+      current = from;
+    }
+    rootMap.set(id, current);
+    return current;
+  }
+
+  for (const r of records) {
+    const id = Number(r.visit_id);
+    const root = getRoot(id);
+    if (!roots.has(root)) roots.set(root, []);
+    roots.get(root).push(id);
+  }
+
+  const rootList = Array.from(roots.keys());
+  rootList.sort((a, b) => {
+    const ra = byId.get(a);
+    const rb = byId.get(b);
+    return (timeMs(ra) || 0) - (timeMs(rb) || 0);
+  });
+
+  return { roots, rootList, rootMap };
+}
+
+function render() {
+  const byId = byIdMap(RECORDS);
+  const { roots, rootList, rootMap } = buildRoots(RECORDS, byId);
+  const laneHeight = 80;
+  const marginLeft = 80;
+  const marginTop = 20;
+  const scale = Number(scaleInput.value);
+
+  const times = RECORDS.map(timeMs).filter(t => t !== null);
+  const minTime = Math.min(...times);
+  const maxTime = Math.max(...times);
+  const spanMinutes = Math.max(1, (maxTime - minTime) / 60000);
+  const width = Math.max(800, marginLeft + spanMinutes * scale + 200);
+  const height = marginTop + rootList.length * laneHeight + 40;
+
+  svg.setAttribute("width", width);
+  svg.setAttribute("height", height);
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.innerHTML = "";
+
+  summaryEl.textContent = `${RECORDS.length} visits, ${rootList.length} lanes`;
+
+  // lane labels
+  rootList.forEach((root, idx) => {
+    const rec = byId.get(root);
+    const label = rec ? hostFromUrl(rec.url || "") : `root ${root}`;
+    const y = marginTop + idx * laneHeight + laneHeight / 2;
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("x", 12);
+    text.setAttribute("y", y + 4);
+    text.setAttribute("class", "lane-label");
+    text.textContent = label.slice(0, 18);
+    svg.appendChild(text);
+  });
+
+  // edges
+  for (const rec of RECORDS) {
+    const from = Number(rec.from_visit || 0);
+    if (!from || !byId.has(from)) continue;
+    const src = byId.get(from);
+    const srcLane = rootList.indexOf(rootMap.get(from));
+    const dstLane = rootList.indexOf(rootMap.get(Number(rec.visit_id)));
+    const srcTime = timeMs(src);
+    const dstTime = timeMs(rec);
+    if (srcTime === null || dstTime === null) continue;
+    const x1 = marginLeft + ((srcTime - minTime) / 60000) * scale;
+    const x2 = marginLeft + ((dstTime - minTime) / 60000) * scale;
+    const y1 = marginTop + srcLane * laneHeight + laneHeight / 2;
+    const y2 = marginTop + dstLane * laneHeight + laneHeight / 2;
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("x1", x1);
+    line.setAttribute("y1", y1);
+    line.setAttribute("x2", x2);
+    line.setAttribute("y2", y2);
+    line.setAttribute("class", "edge");
+    svg.appendChild(line);
+  }
+
+  // nodes
+  for (const rec of RECORDS) {
+    const id = Number(rec.visit_id);
+    const lane = rootList.indexOf(rootMap.get(id));
+    const t = timeMs(rec);
+    if (t === null || lane < 0) continue;
+    const x = marginLeft + ((t - minTime) / 60000) * scale;
+    const y = marginTop + lane * laneHeight + laneHeight / 2;
+    const host = hostFromUrl(rec.url || "");
+    const color = hashColor(host);
+
+    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    circle.setAttribute("cx", x);
+    circle.setAttribute("cy", y);
+    circle.setAttribute("r", 6);
+    circle.setAttribute("fill", color);
+    circle.setAttribute("class", "node");
+    if (rec.hidden) {
+      circle.setAttribute("stroke", "#999999");
+      circle.setAttribute("stroke-dasharray", "2 2");
+    } else {
+      circle.setAttribute("stroke", "#121823");
+    }
+
+    circle.addEventListener("click", () => {
+      detailJson.textContent = JSON.stringify(rec, null, 2);
+    });
+
+    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    title.textContent = `${host}\n${rec.title || ""}\n${rec.visit_time_utc_iso || ""}`;
+    circle.appendChild(title);
+    svg.appendChild(circle);
+  }
+}
+
+scaleInput.addEventListener("input", render);
+render();
+</script>
+</body>
+</html>
+"""
+    html = template.replace("__DATA_JSON__", data_json)
+    with open(out_path, "w", encoding="utf-8") as fp:
+        fp.write(html)
+
+
 def write_graph(records: List[Dict[str, Any]], fmt: str, out_path: Optional[str]) -> None:
     fmt = fmt.lower()
-    if fmt not in {"svg", "png", "dot"}:
-        raise ValueError("--graph must be one of: svg, png, dot")
+    if fmt not in {"svg", "png", "dot", "html"}:
+        raise ValueError("--graph must be one of: svg, png, dot, html")
 
-    dot = build_dot(records)
     default_name = f"history_graph.{fmt}"
     target = out_path or default_name
+
+    if fmt == "html":
+        write_graph_html(records, target)
+        return
+
+    dot = build_dot(records)
 
     if fmt == "dot":
         with open(target, "w", encoding="utf-8") as fp:

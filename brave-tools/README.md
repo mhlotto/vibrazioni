@@ -6,5 +6,5 @@ various files.
 What's here:
 
 - brave-history-dump.py: dump history file data
-  - joined supports --graph svg|png|dot (graph of from_visit -> visit_id edges; still outputs data unless redirected)
+  - joined supports --graph svg|png|dot|html (graph of from_visit -> visit_id edges; still outputs data unless redirected)
  
