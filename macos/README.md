@@ -1,3 +1,2 @@
-mostly futzing as a futzer does
-
-iow, it's trash
+- `fractal-saver/`: macOS ScreenSaver.framework + Metal project for a fractal screensaver.
+- `sprite-framework/`: Swift SpriteKit and SwiftUI experiments/apps.
