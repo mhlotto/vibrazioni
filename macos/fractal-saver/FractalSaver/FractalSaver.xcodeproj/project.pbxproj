@@ -1,0 +1,237 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		7F1A2B3C4D5E6F7000040000 /* FractalSaverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F1A2B3C4D5E6F7000030000 /* FractalSaverView.swift */; };
+		7F1A2B3C4D5E6F7000040001 /* Renderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F1A2B3C4D5E6F7000030001 /* Renderer.swift */; };
+		7F1A2B3C4D5E6F7000040002 /* fractal.metal in Sources */ = {isa = PBXBuildFile; fileRef = 7F1A2B3C4D5E6F7000030002 /* fractal.metal */; };
+		7F1A2B3C4D5E6F7000040003 /* ScreenSaver.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7F1A2B3C4D5E6F7000030005 /* ScreenSaver.framework */; };
+		7F1A2B3C4D5E6F7000040004 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7F1A2B3C4D5E6F7000030006 /* Metal.framework */; };
+		7F1A2B3C4D5E6F7000040005 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7F1A2B3C4D5E6F7000030007 /* MetalKit.framework */; };
+		7F1A2B3C4D5E6F7000040006 /* RNG.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F1A2B3C4D5E6F7000030008 /* RNG.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		7F1A2B3C4D5E6F7000030000 /* FractalSaverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FractalSaverView.swift; sourceTree = "<group>"; };
+		7F1A2B3C4D5E6F7000030001 /* Renderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Renderer.swift; sourceTree = "<group>"; };
+		7F1A2B3C4D5E6F7000030002 /* fractal.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = fractal.metal; sourceTree = "<group>"; };
+		7F1A2B3C4D5E6F7000030003 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		7F1A2B3C4D5E6F7000030004 /* FractalSaver.saver */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FractalSaver.saver; sourceTree = BUILT_PRODUCTS_DIR; };
+		7F1A2B3C4D5E6F7000030005 /* ScreenSaver.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ScreenSaver.framework; path = System/Library/Frameworks/ScreenSaver.framework; sourceTree = SDKROOT; };
+		7F1A2B3C4D5E6F7000030006 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
+		7F1A2B3C4D5E6F7000030007 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
+		7F1A2B3C4D5E6F7000030008 /* RNG.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RNG.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		7F1A2B3C4D5E6F7000050001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7F1A2B3C4D5E6F7000040003 /* ScreenSaver.framework in Frameworks */,
+				7F1A2B3C4D5E6F7000040004 /* Metal.framework in Frameworks */,
+				7F1A2B3C4D5E6F7000040005 /* MetalKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		7F1A2B3C4D5E6F7000060000 = {
+			isa = PBXGroup;
+			children = (
+				7F1A2B3C4D5E6F7000060001 /* FractalSaver */,
+				7F1A2B3C4D5E6F7000060002 /* Frameworks */,
+				7F1A2B3C4D5E6F7000060003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		7F1A2B3C4D5E6F7000060001 /* FractalSaver */ = {
+			isa = PBXGroup;
+			children = (
+				7F1A2B3C4D5E6F7000030000 /* FractalSaverView.swift */,
+				7F1A2B3C4D5E6F7000030001 /* Renderer.swift */,
+				7F1A2B3C4D5E6F7000030008 /* RNG.swift */,
+				7F1A2B3C4D5E6F7000030002 /* fractal.metal */,
+				7F1A2B3C4D5E6F7000030003 /* Info.plist */,
+			);
+			path = FractalSaver;
+			sourceTree = "<group>";
+		};
+		7F1A2B3C4D5E6F7000060002 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				7F1A2B3C4D5E6F7000030005 /* ScreenSaver.framework */,
+				7F1A2B3C4D5E6F7000030006 /* Metal.framework */,
+				7F1A2B3C4D5E6F7000030007 /* MetalKit.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		7F1A2B3C4D5E6F7000060003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				7F1A2B3C4D5E6F7000030004 /* FractalSaver.saver */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		7F1A2B3C4D5E6F7000010001 /* FractalSaver */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7F1A2B3C4D5E6F7000010101 /* Build configuration list for PBXNativeTarget "FractalSaver" */;
+			buildPhases = (
+				7F1A2B3C4D5E6F7000050000 /* Sources */,
+				7F1A2B3C4D5E6F7000050001 /* Frameworks */,
+				7F1A2B3C4D5E6F7000050002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = FractalSaver;
+			productName = FractalSaver;
+			productReference = 7F1A2B3C4D5E6F7000030004 /* FractalSaver.saver */;
+			productType = "com.apple.product-type.bundle";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		7F1A2B3C4D5E6F7000010000 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					7F1A2B3C4D5E6F7000010001 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = 7F1A2B3C4D5E6F7000010100 /* Build configuration list for PBXProject "FractalSaver" */;
+			compatibilityVersion = "Xcode 15.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 7F1A2B3C4D5E6F7000060000;
+			productRefGroup = 7F1A2B3C4D5E6F7000060003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				7F1A2B3C4D5E6F7000010001 /* FractalSaver */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		7F1A2B3C4D5E6F7000050002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		7F1A2B3C4D5E6F7000050000 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7F1A2B3C4D5E6F7000040000 /* FractalSaverView.swift in Sources */,
+				7F1A2B3C4D5E6F7000040001 /* Renderer.swift in Sources */,
+				7F1A2B3C4D5E6F7000040006 /* RNG.swift in Sources */,
+				7F1A2B3C4D5E6F7000040002 /* fractal.metal in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		7F1A2B3C4D5E6F7000020000 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		7F1A2B3C4D5E6F7000020001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		7F1A2B3C4D5E6F7000020002 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = FractalSaver/Info.plist;
+				MACH_O_TYPE = mh_bundle;
+				MARKETING_VERSION = 1.0;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.FractalSaver;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				WRAPPER_EXTENSION = saver;
+			};
+			name = Debug;
+		};
+		7F1A2B3C4D5E6F7000020003 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = FractalSaver/Info.plist;
+				MACH_O_TYPE = mh_bundle;
+				MARKETING_VERSION = 1.0;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.FractalSaver;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				WRAPPER_EXTENSION = saver;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		7F1A2B3C4D5E6F7000010100 /* Build configuration list for PBXProject "FractalSaver" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7F1A2B3C4D5E6F7000020000 /* Debug */,
+				7F1A2B3C4D5E6F7000020001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7F1A2B3C4D5E6F7000010101 /* Build configuration list for PBXNativeTarget "FractalSaver" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7F1A2B3C4D5E6F7000020002 /* Debug */,
+				7F1A2B3C4D5E6F7000020003 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 7F1A2B3C4D5E6F7000010000 /* Project object */;
+}
