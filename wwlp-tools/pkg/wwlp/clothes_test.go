@@ -136,6 +136,9 @@ func TestRecommendClothes(t *testing.T) {
 	if !strings.Contains(captured.Messages[0].Content, "Return exactly these lines in order: Today:, Outerwear:, Footwear:, Extras:, Why:.") {
 		t.Fatalf("missing structured output guidance in system prompt: %q", captured.Messages[0].Content)
 	}
+	if !strings.Contains(captured.Messages[0].Content, "Make Why the most detailed line") {
+		t.Fatalf("missing Why detail guidance in system prompt: %q", captured.Messages[0].Content)
+	}
 	if !strings.Contains(captured.Messages[0].Content, "gets cold easily") {
 		t.Fatalf("missing extra notes in system prompt: %q", captured.Messages[0].Content)
 	}
@@ -163,6 +166,9 @@ func TestClothingPrompts(t *testing.T) {
 
 	if !strings.Contains(systemPrompt, "Return exactly these lines in order: Today:, Outerwear:, Footwear:, Extras:, Why:.") {
 		t.Fatalf("missing structured guidance in system prompt: %q", systemPrompt)
+	}
+	if !strings.Contains(systemPrompt, "Make Why the most detailed line") {
+		t.Fatalf("missing Why detail guidance in system prompt: %q", systemPrompt)
 	}
 	if !strings.Contains(systemPrompt, "prefers waterproof shoes") {
 		t.Fatalf("missing notes in system prompt: %q", systemPrompt)

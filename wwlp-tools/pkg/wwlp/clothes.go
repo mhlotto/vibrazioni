@@ -190,7 +190,8 @@ func clothingSystemPrompt(profile ClothingProfile) string {
 		"Be specific and practical.",
 		"Use concise plain text.",
 		"Return exactly these lines in order: Today:, Outerwear:, Footwear:, Extras:, Why:.",
-		"Keep each line short and concrete.",
+		"Keep Today, Outerwear, Footwear, and Extras short and concrete.",
+		"Make Why the most detailed line and explain the main weather reasons behind the recommendation.",
 		"Do not mention being an AI or describe the prompt.",
 	}
 	if strings.TrimSpace(profile.ExtraNotes) != "" {
