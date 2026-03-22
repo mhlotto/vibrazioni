@@ -48,6 +48,10 @@ Use --file for saved JSON or HTML.
 const defaultTemplateVarsURL = "https://www.wwlp.com/wp-json/lakana/v1/template-variables/"
 const defaultForecastDiscussionURL = "https://www.wwlp.com/weather/todays-forecast/forecast-discussion/"
 const defaultWeatherAlertCounties = "25013,25015,25011,25003"
+const defaultLlamaPort = 8080
+const defaultLlamaModel = "Qwen/Qwen3-4B-GGUF"
+
+var defaultLlamaHost = "127.0.0.1"
 
 func isStdinPiped() bool {
 	fi, err := os.Stdin.Stat()
@@ -125,13 +129,24 @@ func headlineLists(args []string) {
 }
 
 func weather(args []string) {
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		args = append([]string{"--mode", args[0]}, args[1:]...)
+	}
+
 	fs := flag.NewFlagSet("weather", flag.ExitOnError)
 	file := fs.String("file", "", "Input file (JSON/HTML or - for stdin)")
 	quiet := fs.Bool("quiet-warning", false, "Suppress JSON shape warnings")
-	mode := fs.String("mode", "forecast", "Mode: forecast (default), current, three-day, hourly, seven-day, alerts")
+	mode := fs.String("mode", "forecast", "Mode: forecast (default), current, three-day, hourly, seven-day, alerts, clothes")
 	limit := fs.Int("limit", 0, "Max items for hourly or seven-day")
 	short := fs.Bool("short", false, "Short output for seven-day")
 	counties := fs.String("counties", defaultWeatherAlertCounties, "Counties list for weather alerts")
+	profile := fs.String("profile", wwlp.DefaultClothingProfileKey, "Clothing profile: "+strings.Join(wwlp.ClothingProfileKeys(), ", "))
+	activity := fs.String("activity", "everyday errands and normal outdoor walking", "Activity/context for clothing advice")
+	profileNotes := fs.String("profile-notes", "", "Extra wearer details for clothing advice")
+	debugPrompt := fs.Bool("debug-prompt", false, "Print the clothing prompts sent to llama.cpp")
+	llamaHost := fs.String("llama-host", defaultLlamaHost, "llama.cpp host")
+	llamaPort := fs.Int("llama-port", defaultLlamaPort, "llama.cpp port")
+	model := fs.String("model", defaultLlamaModel, "Model name for llama.cpp OpenAI API")
 	fs.Parse(args)
 
 	if *mode == "forecast" {
@@ -169,6 +184,30 @@ func weather(args []string) {
 		printHourly(tv.Weather.Hourly, *limit)
 	case "seven-day":
 		printSevenDay(tv.Weather.SevenDay, *limit, *short)
+	case "clothes":
+		prof, err := wwlp.ClothingProfileByKey(*profile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		prof.Activity = *activity
+		prof.ExtraNotes = *profileNotes
+		if *debugPrompt {
+			systemPrompt, userPrompt := wwlp.ClothingPrompts(tv.Weather, prof)
+			fmt.Println("=== llama.cpp system prompt ===")
+			fmt.Println(systemPrompt)
+			fmt.Println()
+			fmt.Println("=== llama.cpp user prompt ===")
+			fmt.Println(userPrompt)
+			fmt.Println()
+		}
+		client := wwlp.NewLlamaClient(*llamaHost, *llamaPort, *model)
+		advice, err := client.RecommendClothes(tv.Weather, prof)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println(advice)
 	default:
 		fmt.Fprintf(os.Stderr, "error: unknown mode: %s\n", *mode)
 		os.Exit(1)
