@@ -9,4 +9,5 @@ Simple tooling repo (mostly vibe play)
 - **git-tools**: Small git helpers like formatting untracked files from git status into a git add command.
 - **html-scripttags**: Extract HTML script tags with attribute filtering, tests, and a skill template with copy script.
 - **wwlp-tools**: Go CLI for extracting news from WWLP JSON responding endpoint.
+- **pvta-tools**: Go CLI for PVTA BusTracker InfoPoint routes, vehicles, stops, route status, and stop lookup.
 - **macos/sprite-framework/matchtrack**: macOS SwiftUI + SpriteKit match tracking app with YAML-configured buttons, logging, and drag layout.
