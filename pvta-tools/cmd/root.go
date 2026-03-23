@@ -41,6 +41,7 @@ func newAggregator() *app.Aggregator {
 		service.NewRouteService(c),
 		service.NewVehicleService(c),
 		service.NewStopService(c),
+		service.NewDepartureService(c),
 	)
 }
 

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 
 	"pvta-tools/pkg/client"
 	"pvta-tools/pkg/models"
@@ -24,6 +25,10 @@ func (s *VehicleService) GetAllVehicles(ctx context.Context) ([]models.Vehicle, 
 }
 
 func (s *VehicleService) GetVehiclesForRoute(ctx context.Context, routeID int) ([]models.Vehicle, error) {
+	var vehicles []models.Vehicle
+	if err := s.client.GetJSON(ctx, fmt.Sprintf("/Vehicles/GetAllVehiclesForRoute?routeID=%d", routeID), &vehicles); err == nil {
+		return vehicles, nil
+	}
 	vehicles, err := s.GetAllVehicles(ctx)
 	if err != nil {
 		return nil, err

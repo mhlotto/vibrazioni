@@ -27,28 +27,30 @@ func (s *RouteService) GetAllRoutes(ctx context.Context) ([]models.Route, error)
 	return routes, nil
 }
 
+func (s *RouteService) GetVisibleRoutes(ctx context.Context) ([]models.Route, error) {
+	var routes []models.Route
+	if err := s.client.GetJSON(ctx, "/Routes/GetVisibleRoutes", &routes); err != nil {
+		return nil, err
+	}
+	sort.Slice(routes, func(i, j int) bool {
+		if routes[i].SortOrder == routes[j].SortOrder {
+			return routes[i].ShortName < routes[j].ShortName
+		}
+		return routes[i].SortOrder < routes[j].SortOrder
+	})
+	return routes, nil
+}
+
 func (s *RouteService) VisibleRoutes(ctx context.Context) ([]models.Route, error) {
-	routes, err := s.GetAllRoutes(ctx)
+	routes, err := s.GetVisibleRoutes(ctx)
 	if err != nil {
 		return nil, err
 	}
-	filtered := make([]models.Route, 0, len(routes))
-	for _, route := range routes {
-		if route.IsVisible {
-			filtered = append(filtered, route)
-		}
-	}
-	sort.Slice(filtered, func(i, j int) bool {
-		if filtered[i].SortOrder == filtered[j].SortOrder {
-			return filtered[i].ShortName < filtered[j].ShortName
-		}
-		return filtered[i].SortOrder < filtered[j].SortOrder
-	})
-	return filtered, nil
+	return routes, nil
 }
 
 func (s *RouteService) FindRoute(ctx context.Context, input string) (*models.Route, error) {
-	routes, err := s.GetAllRoutes(ctx)
+	routes, err := s.GetVisibleRoutes(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -71,4 +73,12 @@ func (s *RouteService) FindRoute(ctx context.Context, input string) (*models.Rou
 		}
 	}
 	return nil, fmt.Errorf("route not found: %s", input)
+}
+
+func (s *RouteService) GetRouteDetails(ctx context.Context, routeID int) (*models.RouteDetail, error) {
+	var detail models.RouteDetail
+	if err := s.client.GetJSON(ctx, fmt.Sprintf("/RouteDetails/Get/%d", routeID), &detail); err != nil {
+		return nil, err
+	}
+	return &detail, nil
 }
