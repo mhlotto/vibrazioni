@@ -1,2 +1,10 @@
 codex.resume
 ietf-tools/__pycache__/
+pvta-tools/bin/
+pvta-tools/android/.gradle/
+pvta-tools/android/.kotlin/
+pvta-tools/android/build/
+pvta-tools/android/app/build/
+pvta-tools/android/local.properties
+pvta-tools/android/app/libs/pvta-mobilebridge.aar
+pvta-tools/android/app/libs/pvta-mobilebridge-sources.jar
