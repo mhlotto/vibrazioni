@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"pvta-tools/cmd"
+	"github.com/mhlotto/vibrazioni/pvta-tools/cmd"
 )
 
 func main() {

@@ -8,10 +8,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"pvta-tools/pkg/app"
-	"pvta-tools/pkg/client"
-	"pvta-tools/pkg/models"
-	"pvta-tools/pkg/service"
+	"github.com/mhlotto/vibrazioni/pvta-tools/pkg/app"
+	"github.com/mhlotto/vibrazioni/pvta-tools/pkg/client"
+	"github.com/mhlotto/vibrazioni/pvta-tools/pkg/models"
+	"github.com/mhlotto/vibrazioni/pvta-tools/pkg/service"
 )
 
 type options struct {

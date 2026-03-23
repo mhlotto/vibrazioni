@@ -19,6 +19,7 @@ type ApproachingVehicle struct {
 	CurrentStop                string  `json:"current_stop,omitempty"`
 	LastStop                   string  `json:"last_stop,omitempty"`
 	StopsAway                  int     `json:"stops_away,omitempty"`
+	ApproximateStopsAway       bool    `json:"approximate_stops_away,omitempty"`
 	DistanceMiles              float64 `json:"distance_miles,omitempty"`
 	Deviation                  int     `json:"deviation"`
 	DisplayStatus              string  `json:"display_status"`

@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"pvta-tools/pkg/models"
+	"github.com/mhlotto/vibrazioni/pvta-tools/pkg/models"
 )
 
 var departuresCmd = &cobra.Command{
@@ -48,13 +48,13 @@ var departuresCmd = &cobra.Command{
 				}
 				if len(enriched.LiveVehicles) > 0 {
 					fmt.Println("  Buses likely approaching this stop on this service:")
-					printDepartureVehicles(enriched.LiveVehicles, true)
+					printDepartureVehicles(enriched.LiveVehicles)
 				} else if len(enriched.DirectionVehicles) > 0 {
 					fmt.Println("  Live buses on this service direction:")
-					printDepartureVehicles(enriched.DirectionVehicles, false)
+					printDepartureVehicles(enriched.DirectionVehicles)
 				} else if len(enriched.RouteVehicles) > 0 {
 					fmt.Println("  Live buses on the matched route:")
-					printDepartureVehicles(enriched.RouteVehicles, false)
+					printDepartureVehicles(enriched.RouteVehicles)
 				}
 			}
 			fmt.Println()
@@ -76,18 +76,26 @@ func findEnrichedDepartureGroup(groups []models.EnrichedDepartureGroup, routeAnd
 	return nil
 }
 
-func printDepartureVehicles(vehicles []models.ApproachingVehicle, includeStopsAway bool) {
+func printDepartureVehicles(vehicles []models.ApproachingVehicle) {
 	for _, vehicle := range vehicles {
 		busLabel := strings.TrimSpace(vehicle.Name)
 		if busLabel == "" {
 			busLabel = strconv.Itoa(vehicle.VehicleId)
 		}
 		fmt.Printf("    - Bus %s", busLabel)
-		if includeStopsAway && vehicle.StopsAway >= 0 {
+		if vehicle.StopsAway >= 0 {
 			if vehicle.StopsAway == 0 {
-				fmt.Printf(" is at this stop")
+				if vehicle.ApproximateStopsAway {
+					fmt.Printf(" is approximately at this stop")
+				} else {
+					fmt.Printf(" is at this stop")
+				}
 			} else {
-				fmt.Printf(" is about %d stops away", vehicle.StopsAway)
+				if vehicle.ApproximateStopsAway {
+					fmt.Printf(" is approximately %d stops away", vehicle.StopsAway)
+				} else {
+					fmt.Printf(" is about %d stops away", vehicle.StopsAway)
+				}
 			}
 		}
 		if vehicle.DirectionLong != "" {

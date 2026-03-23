@@ -7,8 +7,8 @@ import (
 	"regexp"
 	"strings"
 
-	"pvta-tools/pkg/client"
-	"pvta-tools/pkg/models"
+	"github.com/mhlotto/vibrazioni/pvta-tools/pkg/client"
+	"github.com/mhlotto/vibrazioni/pvta-tools/pkg/models"
 )
 
 var htmlTagRe = regexp.MustCompile(`(?s)<[^>]*>`)

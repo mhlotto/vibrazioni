@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"pvta-tools/pkg/models"
-	"pvta-tools/pkg/service"
+	"github.com/mhlotto/vibrazioni/pvta-tools/pkg/models"
+	"github.com/mhlotto/vibrazioni/pvta-tools/pkg/service"
 )
 
 type Aggregator struct {
@@ -282,7 +282,7 @@ func (a *Aggregator) enrichDepartureGroups(ctx context.Context, stopID int, grou
 			orderedStopsCache[route.RouteId] = orderedStops
 		}
 
-		enriched.RouteVehicles = summarizeVehicles(vehicles, stopID, stopMap)
+		enriched.RouteVehicles = summarizeVehicles(vehicles, orderedStops, stopID, stopMap)
 		enriched.DirectionVehicles = findDirectionVehicles(orderedStops, vehicles, stopID, directionLabel, stopMap)
 		enriched.LiveVehicles = findApproachingVehicles(detail, vehicles, stopID, directionLabel, stopMap)
 		if len(enriched.LiveVehicles) == 0 {
@@ -435,35 +435,17 @@ func findApproachingVehiclesFromOrderedStops(orderedStops []models.Stop, vehicle
 
 	out := make([]models.ApproachingVehicle, 0)
 	for _, vehicle := range vehicles {
-		currentIndexes := indexesForStopID(orderedStops, vehicle.StopId)
+		currentIndexes := indexesForVehiclePosition(orderedStops, vehicle)
 		if len(currentIndexes) == 0 {
 			continue
 		}
 
-		bestStopsAway := -1
-		for _, currentIdx := range currentIndexes {
-			inferred := inferDirectionFromOrderedStops(orderedStops, currentIdx)
-			if inferred != "" && inferred != dirCode {
-				continue
-			}
-			for _, targetIdx := range targetIndexes {
-				if currentIdx > targetIdx {
-					continue
-				}
-				delta := targetIdx - currentIdx
-				if bestStopsAway == -1 || delta < bestStopsAway {
-					bestStopsAway = delta
-				}
-			}
-		}
+		bestStopsAway, approximate := estimateStopsAwayFromIndexes(orderedStops, currentIndexes, targetIndexes, dirCode)
 		if bestStopsAway == -1 {
 			continue
 		}
 
-		currentStop := ""
-		if stop, ok := stopMap[vehicle.StopId]; ok {
-			currentStop = stop.Name
-		}
+		currentStop := currentStopLabel(vehicle, stopMap, orderedStops, currentIndexes)
 		out = append(out, models.ApproachingVehicle{
 			VehicleId:                  vehicle.VehicleId,
 			Name:                       vehicle.Name,
@@ -472,6 +454,7 @@ func findApproachingVehiclesFromOrderedStops(orderedStops []models.Stop, vehicle
 			CurrentStop:                currentStop,
 			LastStop:                   vehicle.LastStop,
 			StopsAway:                  bestStopsAway,
+			ApproximateStopsAway:       approximate,
 			DistanceMiles:              distanceToTargetStop(vehicle, targetStopID, stopMap),
 			Deviation:                  vehicle.Deviation,
 			DisplayStatus:              vehicle.DisplayStatus,
@@ -499,6 +482,31 @@ func indexesForStopID(stops []models.Stop, stopID int) []int {
 		}
 	}
 	return out
+}
+
+func indexesForStopName(stops []models.Stop, name string) []int {
+	target := normalizeStopText(name)
+	if target == "" {
+		return nil
+	}
+	out := make([]int, 0)
+	for i, stop := range stops {
+		for _, candidate := range stopNameVariants(stop) {
+			if candidate == target {
+				out = append(out, i)
+				break
+			}
+		}
+	}
+	return out
+}
+
+func indexesForVehiclePosition(stops []models.Stop, vehicle models.Vehicle) []int {
+	indexes := indexesForStopID(stops, vehicle.StopId)
+	if len(indexes) > 0 {
+		return indexes
+	}
+	return indexesForStopName(stops, vehicle.LastStop)
 }
 
 func inferDirectionFromOrderedStops(stops []models.Stop, index int) string {
@@ -541,13 +549,12 @@ func abs(v float64) float64 {
 	return v
 }
 
-func summarizeVehicles(vehicles []models.Vehicle, targetStopID int, stopMap map[int]models.Stop) []models.ApproachingVehicle {
+func summarizeVehicles(vehicles []models.Vehicle, orderedStops []models.Stop, targetStopID int, stopMap map[int]models.Stop) []models.ApproachingVehicle {
 	out := make([]models.ApproachingVehicle, 0, len(vehicles))
 	for _, vehicle := range vehicles {
-		currentStop := ""
-		if stop, ok := stopMap[vehicle.StopId]; ok {
-			currentStop = stop.Name
-		}
+		currentIndexes := indexesForVehiclePosition(orderedStops, vehicle)
+		currentStop := currentStopLabel(vehicle, stopMap, orderedStops, currentIndexes)
+		stopsAway, approximate := estimateStopsAwayFromCurrentIndexes(orderedStops, currentIndexes, targetStopID, "")
 		out = append(out, models.ApproachingVehicle{
 			VehicleId:                  vehicle.VehicleId,
 			Name:                       vehicle.Name,
@@ -555,6 +562,8 @@ func summarizeVehicles(vehicles []models.Vehicle, targetStopID int, stopMap map[
 			DirectionLong:              vehicle.DirectionLong,
 			CurrentStop:                currentStop,
 			LastStop:                   vehicle.LastStop,
+			StopsAway:                  stopsAway,
+			ApproximateStopsAway:       approximate,
 			DistanceMiles:              distanceToTargetStop(vehicle, targetStopID, stopMap),
 			Deviation:                  vehicle.Deviation,
 			DisplayStatus:              vehicle.DisplayStatus,
@@ -574,14 +583,14 @@ func findDirectionVehicles(orderedStops []models.Stop, vehicles []models.Vehicle
 	out := make([]models.ApproachingVehicle, 0)
 	for _, vehicle := range vehicles {
 		if vehicleMatchesDirection(vehicle, directionLabel, dirCode) {
-			out = append(out, vehicleSummary(vehicle, targetStopID, stopMap))
+			out = append(out, vehicleSummary(vehicle, orderedStops, targetStopID, stopMap, dirCode))
 			continue
 		}
 
-		currentIndexes := indexesForStopID(orderedStops, vehicle.StopId)
+		currentIndexes := indexesForVehiclePosition(orderedStops, vehicle)
 		for _, idx := range currentIndexes {
 			if inferDirectionFromOrderedStops(orderedStops, idx) == dirCode {
-				out = append(out, vehicleSummary(vehicle, targetStopID, stopMap))
+				out = append(out, vehicleSummary(vehicle, orderedStops, targetStopID, stopMap, dirCode))
 				break
 			}
 		}
@@ -591,11 +600,10 @@ func findDirectionVehicles(orderedStops []models.Stop, vehicles []models.Vehicle
 	return out
 }
 
-func vehicleSummary(vehicle models.Vehicle, targetStopID int, stopMap map[int]models.Stop) models.ApproachingVehicle {
-	currentStop := ""
-	if stop, ok := stopMap[vehicle.StopId]; ok {
-		currentStop = stop.Name
-	}
+func vehicleSummary(vehicle models.Vehicle, orderedStops []models.Stop, targetStopID int, stopMap map[int]models.Stop, dirCode string) models.ApproachingVehicle {
+	currentIndexes := indexesForVehiclePosition(orderedStops, vehicle)
+	currentStop := currentStopLabel(vehicle, stopMap, orderedStops, currentIndexes)
+	stopsAway, approximate := estimateStopsAwayFromCurrentIndexes(orderedStops, currentIndexes, targetStopID, dirCode)
 	return models.ApproachingVehicle{
 		VehicleId:                  vehicle.VehicleId,
 		Name:                       vehicle.Name,
@@ -603,12 +611,124 @@ func vehicleSummary(vehicle models.Vehicle, targetStopID int, stopMap map[int]mo
 		DirectionLong:              vehicle.DirectionLong,
 		CurrentStop:                currentStop,
 		LastStop:                   vehicle.LastStop,
-		StopsAway:                  -1,
+		StopsAway:                  stopsAway,
+		ApproximateStopsAway:       approximate,
 		DistanceMiles:              distanceToTargetStop(vehicle, targetStopID, stopMap),
 		Deviation:                  vehicle.Deviation,
 		DisplayStatus:              vehicle.DisplayStatus,
 		OccupancyStatusReportLabel: vehicle.OccupancyStatusReportLabel,
 	}
+}
+
+func estimateStopsAwayFromOrderedStops(orderedStops []models.Stop, currentStopID, targetStopID int, dirCode string) (int, bool) {
+	if currentStopID == 0 || targetStopID == 0 {
+		return -1, false
+	}
+	currentIndexes := indexesForStopID(orderedStops, currentStopID)
+	return estimateStopsAwayFromCurrentIndexes(orderedStops, currentIndexes, targetStopID, dirCode)
+}
+
+func estimateStopsAwayFromCurrentIndexes(orderedStops []models.Stop, currentIndexes []int, targetStopID int, dirCode string) (int, bool) {
+	if targetStopID == 0 || len(currentIndexes) == 0 {
+		return -1, false
+	}
+	targetIndexes := indexesForStopID(orderedStops, targetStopID)
+	if len(targetIndexes) == 0 {
+		return -1, false
+	}
+	return estimateStopsAwayFromIndexes(orderedStops, currentIndexes, targetIndexes, dirCode)
+}
+
+func estimateStopsAwayFromIndexes(orderedStops []models.Stop, currentIndexes, targetIndexes []int, dirCode string) (int, bool) {
+	bestStopsAway := -1
+	for _, currentIdx := range currentIndexes {
+		if dirCode != "" {
+			inferred := inferDirectionFromOrderedStops(orderedStops, currentIdx)
+			if inferred != "" && inferred != dirCode {
+				continue
+			}
+		}
+		for _, targetIdx := range targetIndexes {
+			if currentIdx > targetIdx {
+				continue
+			}
+			delta := targetIdx - currentIdx
+			if bestStopsAway == -1 || delta < bestStopsAway {
+				bestStopsAway = delta
+			}
+		}
+	}
+	if bestStopsAway != -1 {
+		return bestStopsAway, false
+	}
+	if dirCode == "" {
+		return -1, false
+	}
+
+	bestStopsAway = -1
+	for _, currentIdx := range currentIndexes {
+		for _, targetIdx := range targetIndexes {
+			if currentIdx > targetIdx {
+				continue
+			}
+			delta := targetIdx - currentIdx
+			if bestStopsAway == -1 || delta < bestStopsAway {
+				bestStopsAway = delta
+			}
+		}
+	}
+	if bestStopsAway == -1 {
+		return -1, false
+	}
+	return bestStopsAway, true
+}
+
+func currentStopLabel(vehicle models.Vehicle, stopMap map[int]models.Stop, orderedStops []models.Stop, currentIndexes []int) string {
+	if stop, ok := stopMap[vehicle.StopId]; ok {
+		return stop.Name
+	}
+	if len(currentIndexes) > 0 {
+		return orderedStops[currentIndexes[0]].Name
+	}
+	return vehicle.LastStop
+}
+
+func stopNameVariants(stop models.Stop) []string {
+	variants := []string{
+		normalizeStopText(stop.Name),
+		normalizeStopText(stop.Description),
+	}
+	if stop.Name != "" {
+		variants = append(variants, stripTrailingParenVariant(stop.Name))
+	}
+	if stop.Description != "" {
+		variants = append(variants, stripTrailingParenVariant(stop.Description))
+	}
+	out := make([]string, 0, len(variants))
+	seen := make(map[string]bool, len(variants))
+	for _, variant := range variants {
+		if variant == "" || seen[variant] {
+			continue
+		}
+		seen[variant] = true
+		out = append(out, variant)
+	}
+	return out
+}
+
+func normalizeStopText(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.ReplaceAll(s, "/", " / ")
+	s = strings.Join(strings.Fields(s), " ")
+	return s
+}
+
+func stripTrailingParenVariant(s string) string {
+	s = normalizeStopText(s)
+	if idx := strings.LastIndex(s, " ("); idx != -1 && strings.HasSuffix(s, ")") {
+		return strings.TrimSpace(s[:idx])
+	}
+	return ""
 }
 
 func dedupeVehicleSummaries(vehicles *[]models.ApproachingVehicle) {

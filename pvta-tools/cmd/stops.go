@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"pvta-tools/pkg/models"
+	"github.com/mhlotto/vibrazioni/pvta-tools/pkg/models"
 )
 
 var stopsFilter string
