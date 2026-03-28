@@ -22,6 +22,7 @@ type ClothingProfile struct {
 
 type ClothingOptions struct {
 	IncludePoem bool
+	SassyTone   bool
 }
 
 var clothingProfiles = []ClothingProfile{
@@ -209,6 +210,9 @@ func clothingSystemPrompt(profile ClothingProfile, options ClothingOptions) stri
 		"Make Why the most detailed line and explain the main weather reasons behind the recommendation.",
 		"Do not mention being an AI or describe the prompt.",
 	}
+	if options.SassyTone {
+		parts = append(parts, "Use a playful, catty, mildly sassy tone. Be funny without being cruel, obscene, or mean-spirited.")
+	}
 	if options.IncludePoem {
 		parts = append(parts, "After the Why line, add a blank line, then a Poem: line followed by exactly four short lines about the weather and the outfit.")
 	}
@@ -226,6 +230,9 @@ func buildClothingPrompt(weather *Weather, profile ClothingProfile, options Clot
 	}
 	if strings.TrimSpace(profile.ExtraNotes) != "" {
 		parts = append(parts, "Extra wearer notes: "+strings.TrimSpace(profile.ExtraNotes)+".")
+	}
+	if options.SassyTone {
+		parts = append(parts, "Make the advice sound stylishly judgmental in a fun way, while still being genuinely useful.")
 	}
 	if options.IncludePoem {
 		parts = append(parts, "Also include a short poem about today's weather and the recommended clothes.")

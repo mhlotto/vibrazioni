@@ -144,6 +144,7 @@ func weather(args []string) {
 	activity := fs.String("activity", "everyday errands and normal outdoor walking", "Activity/context for clothing advice")
 	profileNotes := fs.String("profile-notes", "", "Extra wearer details for clothing advice")
 	poem := fs.Bool("poem", false, "Also ask llama.cpp for a short weather-and-clothes poem")
+	sassy := fs.Bool("sassy", false, "Use a playful, catty tone for clothing advice")
 	debugPrompt := fs.Bool("debug-prompt", false, "Print the clothing prompts sent to llama.cpp")
 	llamaHost := fs.String("llama-host", defaultLlamaHost, "llama.cpp host")
 	llamaPort := fs.Int("llama-port", defaultLlamaPort, "llama.cpp port")
@@ -193,7 +194,7 @@ func weather(args []string) {
 		}
 		prof.Activity = *activity
 		prof.ExtraNotes = *profileNotes
-		clothingOptions := wwlp.ClothingOptions{IncludePoem: *poem}
+		clothingOptions := wwlp.ClothingOptions{IncludePoem: *poem, SassyTone: *sassy}
 		if *debugPrompt {
 			systemPrompt, userPrompt := wwlp.ClothingPromptsWithOptions(tv.Weather, prof, clothingOptions)
 			fmt.Println("=== llama.cpp system prompt ===")

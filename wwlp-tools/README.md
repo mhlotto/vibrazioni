@@ -150,6 +150,13 @@ Ask for a short poem after the clothing advice:
 bin/wwlp weather clothes --poem
 ```
 
+Ask for playful, catty delivery:
+
+```sh
+bin/wwlp weather clothes --sassy
+bin/wwlp weather clothes --sassy --poem
+```
+
 Print the exact prompts sent to llama.cpp:
 
 ```sh

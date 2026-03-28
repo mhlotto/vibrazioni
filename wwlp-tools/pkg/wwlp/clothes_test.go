@@ -285,6 +285,26 @@ func TestClothingPromptsWithPoem(t *testing.T) {
 	}
 }
 
+func TestClothingPromptsWithSassyTone(t *testing.T) {
+	profile, err := ClothingProfileByKey(DefaultClothingProfileKey)
+	if err != nil {
+		t.Fatalf("load profile: %v", err)
+	}
+
+	systemPrompt, userPrompt := ClothingPromptsWithOptions(&Weather{
+		ThreeDay: &ThreeDayWeather{
+			Current: &WeatherPoint{Temperature: "44", Phrase: "Windy", PrecipChance: "20"},
+		},
+	}, profile, ClothingOptions{SassyTone: true})
+
+	if !strings.Contains(systemPrompt, "playful, catty, mildly sassy tone") {
+		t.Fatalf("missing sassy guidance in system prompt: %q", systemPrompt)
+	}
+	if !strings.Contains(userPrompt, "stylishly judgmental in a fun way") {
+		t.Fatalf("missing sassy guidance in user prompt: %q", userPrompt)
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
