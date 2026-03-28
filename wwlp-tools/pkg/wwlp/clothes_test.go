@@ -60,7 +60,7 @@ func TestBuildClothingPrompt(t *testing.T) {
 	}
 	profile.Activity = "walking to work and standing outside for 20 minutes"
 	profile.ExtraNotes = "runs cold and prefers a hat"
-	prompt := buildClothingPrompt(weather, profile)
+	prompt := buildClothingPrompt(weather, profile, ClothingOptions{})
 
 	for _, want := range []string{
 		"Mid-40s Male",
@@ -150,6 +150,90 @@ func TestRecommendClothes(t *testing.T) {
 	}
 }
 
+func TestRecommendClothesWithPoem(t *testing.T) {
+	var captured chatCompletionsRequest
+	clientHTTP := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(bytes.NewBufferString(
+					`{"choices":[{"message":{"role":"assistant","content":"Today: Light jacket\nOuterwear: Light rain shell\nFootwear: Waterproof sneakers\nExtras: Small umbrella\nWhy: Cool with a chance of showers.\n\nPoem:\nGray clouds drift low\nRain taps at the curb\nYour jacket keeps the chill in check\nWaterproof shoes carry you home"}}]}`,
+				)),
+			}, nil
+		}),
+	}
+
+	profile, err := ClothingProfileByKey(DefaultClothingProfileKey)
+	if err != nil {
+		t.Fatalf("load profile: %v", err)
+	}
+	client := &LlamaClient{
+		BaseURL:    "http://llama.local/v1/chat/completions",
+		Model:      "Qwen/Qwen3-4B-GGUF",
+		HTTPClient: clientHTTP,
+	}
+	weather := &Weather{
+		ThreeDay: &ThreeDayWeather{
+			Current: &WeatherPoint{Temperature: "51", Phrase: "Mostly cloudy"},
+		},
+	}
+
+	got, err := client.RecommendClothesWithOptions(weather, profile, ClothingOptions{IncludePoem: true})
+	if err != nil {
+		t.Fatalf("recommend clothes with poem: %v", err)
+	}
+	if !strings.Contains(got, "Poem:") {
+		t.Fatalf("expected poem in response: %q", got)
+	}
+	if !strings.Contains(captured.Messages[0].Content, "Poem: line followed by exactly four short lines") {
+		t.Fatalf("missing poem guidance in system prompt: %q", captured.Messages[0].Content)
+	}
+	if !strings.Contains(captured.Messages[1].Content, "Also include a short poem about today's weather and the recommended clothes.") {
+		t.Fatalf("missing poem guidance in user prompt: %q", captured.Messages[1].Content)
+	}
+}
+
+func TestRecommendClothesWithPoemNormalizesMissingPoemLabel(t *testing.T) {
+	clientHTTP := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(bytes.NewBufferString(
+					`{"choices":[{"message":{"role":"assistant","content":"Today: Light jacket\nOuterwear: Windbreaker\nFootwear: Insulated boots\nExtras: Scarf or beanie\nWhy: Cool air and a sharp overnight drop call for layers.\n\nClouds drift over the cold,\nlayers keep the chill at bay,\nwool socks and boots hold fast,\nwinter's grip is soft in day."}}]}`,
+				)),
+			}, nil
+		}),
+	}
+
+	profile, err := ClothingProfileByKey(DefaultClothingProfileKey)
+	if err != nil {
+		t.Fatalf("load profile: %v", err)
+	}
+	client := &LlamaClient{
+		BaseURL:    "http://llama.local/v1/chat/completions",
+		Model:      "Qwen/Qwen3-4B-GGUF",
+		HTTPClient: clientHTTP,
+	}
+	weather := &Weather{
+		ThreeDay: &ThreeDayWeather{
+			Current: &WeatherPoint{Temperature: "37", Phrase: "Cloudy"},
+		},
+	}
+
+	got, err := client.RecommendClothesWithOptions(weather, profile, ClothingOptions{IncludePoem: true})
+	if err != nil {
+		t.Fatalf("recommend clothes with normalized poem: %v", err)
+	}
+	if !strings.Contains(got, "\n\nPoem:\nClouds drift over the cold,") {
+		t.Fatalf("expected normalized poem label, got: %q", got)
+	}
+}
+
 func TestClothingPrompts(t *testing.T) {
 	profile, err := ClothingProfileByKey(DefaultClothingProfileKey)
 	if err != nil {
@@ -178,6 +262,26 @@ func TestClothingPrompts(t *testing.T) {
 	}
 	if !strings.Contains(userPrompt, "Current: 44F, Rainy with 80% precip chance.") {
 		t.Fatalf("missing weather summary in user prompt: %q", userPrompt)
+	}
+}
+
+func TestClothingPromptsWithPoem(t *testing.T) {
+	profile, err := ClothingProfileByKey(DefaultClothingProfileKey)
+	if err != nil {
+		t.Fatalf("load profile: %v", err)
+	}
+
+	systemPrompt, userPrompt := ClothingPromptsWithOptions(&Weather{
+		ThreeDay: &ThreeDayWeather{
+			Current: &WeatherPoint{Temperature: "44", Phrase: "Rainy", PrecipChance: "80"},
+		},
+	}, profile, ClothingOptions{IncludePoem: true})
+
+	if !strings.Contains(systemPrompt, "Poem: line followed by exactly four short lines") {
+		t.Fatalf("missing poem guidance in system prompt: %q", systemPrompt)
+	}
+	if !strings.Contains(userPrompt, "Also include a short poem about today's weather and the recommended clothes.") {
+		t.Fatalf("missing poem guidance in user prompt: %q", userPrompt)
 	}
 }
 

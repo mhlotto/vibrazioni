@@ -20,6 +20,10 @@ type ClothingProfile struct {
 	ExtraNotes  string
 }
 
+type ClothingOptions struct {
+	IncludePoem bool
+}
+
 var clothingProfiles = []ClothingProfile{
 	{
 		Key:         DefaultClothingProfileKey,
@@ -117,10 +121,14 @@ func NewLlamaClient(host string, port int, model string) *LlamaClient {
 }
 
 func (c *LlamaClient) RecommendClothes(weather *Weather, profile ClothingProfile) (string, error) {
+	return c.RecommendClothesWithOptions(weather, profile, ClothingOptions{})
+}
+
+func (c *LlamaClient) RecommendClothesWithOptions(weather *Weather, profile ClothingProfile, options ClothingOptions) (string, error) {
 	if weather == nil {
 		return "", fmt.Errorf("weather missing")
 	}
-	systemPrompt, userPrompt := ClothingPrompts(weather, profile)
+	systemPrompt, userPrompt := ClothingPromptsWithOptions(weather, profile, options)
 	reqBody := chatCompletionsRequest{
 		Model: c.Model,
 		Messages: []chatMessage{
@@ -176,14 +184,21 @@ func (c *LlamaClient) RecommendClothes(weather *Weather, profile ClothingProfile
 	if content == "" {
 		return "", fmt.Errorf("chat completion returned empty content")
 	}
+	if options.IncludePoem {
+		content = normalizeClothingPoemOutput(content)
+	}
 	return content, nil
 }
 
 func ClothingPrompts(weather *Weather, profile ClothingProfile) (string, string) {
-	return clothingSystemPrompt(profile), buildClothingPrompt(weather, profile)
+	return ClothingPromptsWithOptions(weather, profile, ClothingOptions{})
 }
 
-func clothingSystemPrompt(profile ClothingProfile) string {
+func ClothingPromptsWithOptions(weather *Weather, profile ClothingProfile, options ClothingOptions) (string, string) {
+	return clothingSystemPrompt(profile, options), buildClothingPrompt(weather, profile, options)
+}
+
+func clothingSystemPrompt(profile ClothingProfile, options ClothingOptions) string {
 	parts := []string{
 		"You recommend what to wear based on a local weather forecast.",
 		profile.PromptHint,
@@ -194,13 +209,16 @@ func clothingSystemPrompt(profile ClothingProfile) string {
 		"Make Why the most detailed line and explain the main weather reasons behind the recommendation.",
 		"Do not mention being an AI or describe the prompt.",
 	}
+	if options.IncludePoem {
+		parts = append(parts, "After the Why line, add a blank line, then a Poem: line followed by exactly four short lines about the weather and the outfit.")
+	}
 	if strings.TrimSpace(profile.ExtraNotes) != "" {
 		parts = append(parts, "Additional wearer details: "+strings.TrimSpace(profile.ExtraNotes)+".")
 	}
 	return strings.Join(parts, " ")
 }
 
-func buildClothingPrompt(weather *Weather, profile ClothingProfile) string {
+func buildClothingPrompt(weather *Weather, profile ClothingProfile, options ClothingOptions) string {
 	var parts []string
 	parts = append(parts, "Give clothing advice for this profile: "+profile.DisplayName+".")
 	if strings.TrimSpace(profile.Activity) != "" {
@@ -208,6 +226,9 @@ func buildClothingPrompt(weather *Weather, profile ClothingProfile) string {
 	}
 	if strings.TrimSpace(profile.ExtraNotes) != "" {
 		parts = append(parts, "Extra wearer notes: "+strings.TrimSpace(profile.ExtraNotes)+".")
+	}
+	if options.IncludePoem {
+		parts = append(parts, "Also include a short poem about today's weather and the recommended clothes.")
 	}
 	parts = append(parts, "Weather summary:")
 
@@ -279,4 +300,40 @@ func formatPromptPrecip(p string) string {
 		return ""
 	}
 	return fmt.Sprintf(" with %s%% precip chance", p)
+}
+
+func normalizeClothingPoemOutput(content string) string {
+	if strings.Contains(content, "\nPoem:") || strings.HasPrefix(content, "Poem:") {
+		return content
+	}
+
+	lines := strings.Split(content, "\n")
+	trimmed := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed = append(trimmed, strings.TrimRight(line, " \t"))
+	}
+
+	if len(trimmed) < 9 {
+		return content
+	}
+	if strings.TrimSpace(trimmed[0]) == "" {
+		return content
+	}
+	requiredPrefixes := []string{"Today:", "Outerwear:", "Footwear:", "Extras:", "Why:"}
+	for i, prefix := range requiredPrefixes {
+		if i >= len(trimmed) || !strings.HasPrefix(strings.TrimSpace(trimmed[i]), prefix) {
+			return content
+		}
+	}
+
+	start := len(trimmed) - 4
+	for _, line := range trimmed[start:] {
+		if strings.TrimSpace(line) == "" {
+			return content
+		}
+	}
+
+	head := strings.Join(trimmed[:start], "\n")
+	poem := strings.Join(trimmed[start:], "\n")
+	return strings.TrimRight(head, "\n") + "\n\nPoem:\n" + poem
 }

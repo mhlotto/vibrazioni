@@ -144,6 +144,12 @@ bin/wwlp weather clothes \
   --profile-notes "gets cold easily"
 ```
 
+Ask for a short poem after the clothing advice:
+
+```sh
+bin/wwlp weather clothes --poem
+```
+
 Print the exact prompts sent to llama.cpp:
 
 ```sh
