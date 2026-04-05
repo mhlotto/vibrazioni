@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if [[ $# -eq 0 ]]; then
+  echo "Usage: $(basename "$0") <zip args...>" >&2
+  echo "Example: $(basename "$0") -r ../archive.zip ." >&2
+  echo "Example: $(basename "$0") -r ../archive.zip . -x '*.DS_Store' 'node_modules/*'" >&2
+  echo "Note: if ./.git exists, it is excluded automatically." >&2
+  exit 2
+fi
+
+args=("$@")
+
+if [[ -d .git ]]; then
+  exec zip "${args[@]}" -x '.git/*'
+fi
+
+exec zip "${args[@]}"
