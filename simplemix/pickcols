@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  echo "Usage: $(basename "$0") <col> [<col> ...] [separator]" >&2
+  echo "Example: echo 'a b c d e' | $(basename "$0") 1 4 5" >&2
+  echo "Example: echo 'a b c d e' | $(basename "$0") 1 4 5 ';;'" >&2
+  echo "Example: printf 'a b c d e\n1 2 3 4 5\n' | $(basename "$0") 2 3 '|'" >&2
+}
+
+if [[ $# -eq 0 ]]; then
+  usage
+  exit 2
+fi
+
+sep=' '
+last_arg="${!#}"
+
+if [[ ! "$last_arg" =~ ^[0-9]+$ ]]; then
+  sep="$last_arg"
+  set -- "${@:1:$(($# - 1))}"
+fi
+
+if [[ $# -eq 0 ]]; then
+  usage
+  exit 2
+fi
+
+for col in "$@"; do
+  if [[ ! "$col" =~ ^[0-9]+$ ]] || [[ "$col" -lt 1 ]]; then
+    echo "Bad column: $col" >&2
+    usage
+    exit 2
+  fi
+done
+
+awk_sep=${sep//\\/\\\\}
+awk_sep=${awk_sep//\"/\\\"}
+
+awk_script='{ '
+first=1
+for col in "$@"; do
+  if [[ "$first" -eq 0 ]]; then
+    awk_script+="printf \"%s\", sep; "
+  fi
+  awk_script+="printf \"%s\", \$$col; "
+  first=0
+done
+awk_script+='printf "\n" }'
+
+exec awk -v "sep=$awk_sep" "$awk_script"

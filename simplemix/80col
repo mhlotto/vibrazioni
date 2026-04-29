@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  echo "Usage: $(basename "$0") <file>" >&2
+  echo "Wrap a text file to 80 columns in place using fold(1) and sponge(1)." >&2
+}
+
+if [[ $# -ne 1 ]]; then
+  usage
+  exit 2
+fi
+
+file="$1"
+
+if [[ ! -f "$file" ]]; then
+  echo "Not a file: $file" >&2
+  exit 2
+fi
+
+if ! command -v sponge >/dev/null 2>&1; then
+  echo "Missing required command: sponge" >&2
+  exit 2
+fi
+
+fold -s -w 80 "$file" | sponge "$file"
