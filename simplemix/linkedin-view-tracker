@@ -1,0 +1,446 @@
+#!/usr/bin/env python3
+"""
+Track LinkedIn "Who's viewed your profile" snapshots over time.
+
+Examples:
+
+  pbpaste | linkedin-view-tracker add
+  linkedin-view-tracker add input.txt
+  linkedin-view-tracker --db my_views.jsonl add input.txt
+  linkedin-view-tracker list
+  linkedin-view-tracker latest
+  linkedin-view-tracker diff
+  linkedin-view-tracker export > all_snapshots.json
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+import sys
+from collections import Counter
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Optional
+
+
+DEFAULT_DB = "linkedin_profile_views.jsonl"
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def clean_lines(text: str) -> list[str]:
+    lines = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line == "View":
+            continue
+        lines.append(line)
+    return lines
+
+
+def parse_count_prefix(line: str) -> tuple[Optional[int], str]:
+    match = re.match(r"^(\d+)\s+(.+)$", line)
+    if not match:
+        return None, line
+    return int(match.group(1)), match.group(2).strip()
+
+
+def slugify_key(value: str) -> str:
+    value = value.lower().strip()
+    value = value.replace("\u2019", "'")
+    value = re.sub(r"[^a-z0-9]+", "_", value)
+    value = re.sub(r"_+", "_", value)
+    return value.strip("_")
+
+
+def parse_viewer(line: str) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "description": line,
+        "viewer_key": make_viewer_key(line),
+        "role": None,
+        "company": None,
+        "industry": None,
+        "location": None,
+        "is_recruiter": False,
+        "is_private_or_partial": False,
+    }
+
+    match = re.match(r"^Someone at\s+(.+)$", line)
+    if match:
+        item["company"] = match.group(1).strip()
+        item["is_private_or_partial"] = True
+        return item
+
+    match = re.match(r"^(.+?)\s+in the\s+(.+?)\s+industry\s+from\s+(.+)$", line)
+    if match:
+        item["role"] = match.group(1).strip()
+        item["industry"] = match.group(2).strip()
+        item["location"] = match.group(3).strip()
+        item["is_recruiter"] = item["role"].lower() == "recruiter"
+        return item
+
+    match = re.match(r"^(.+?)\s+at\s+(.+)$", line)
+    if match:
+        item["role"] = match.group(1).strip()
+        item["company"] = match.group(2).strip()
+        item["is_recruiter"] = item["role"].lower() == "recruiter"
+        return item
+
+    item["is_recruiter"] = "recruiter" in line.lower()
+    item["is_private_or_partial"] = line.lower().startswith("someone ")
+    return item
+
+
+def make_viewer_key(description: str) -> str:
+    """
+    Stable-ish identity key for deduping across snapshots.
+
+    LinkedIn often hides names, so this is not a true person ID. It is just a
+    normalized hash of the visible description.
+    """
+    normalized = description.strip().lower()
+    normalized = re.sub(r"\s+", " ", normalized)
+    return hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:12]
+
+
+def parse_linkedin_profile_viewers(text: str) -> dict[str, Any]:
+    lines = clean_lines(text)
+
+    result: dict[str, Any] = {
+        "source": "LinkedIn profile viewers",
+        "period": None,
+        "reported_profile_viewers_past_90_days": None,
+        "summary": {},
+        "visible_viewer_details": [],
+    }
+
+    viewer_section = False
+
+    skip_phrases = (
+        "who's viewed your profile",
+        "who\u2019s viewed your profile",
+        "profile viewers in the past",
+        "see who\u2019s viewed your profile",
+        "see who's viewed your profile",
+        "for a limited time",
+        "includes limited-time",
+        "get 50% off premium",
+        "cancel anytime",
+        "view the full details",
+        "turn off private browsing",
+        "manage settings",
+        "unlock the full list",
+        "learn more",
+        "terms apply",
+    )
+
+    for i, line in enumerate(lines):
+        low = line.lower()
+
+        if low.startswith("past "):
+            result["period"] = line
+            continue
+
+        if result["reported_profile_viewers_past_90_days"] is None:
+            if i > 0 and lines[i - 1].lower().startswith("past ") and line.isdigit():
+                result["reported_profile_viewers_past_90_days"] = int(line)
+                continue
+
+        if low == "viewer details":
+            viewer_section = True
+            continue
+
+        if "linkedin members" in low:
+            count, _ = parse_count_prefix(line)
+            if count is not None:
+                result["summary"]["private_mode_viewers"] = count
+            continue
+
+        if any(phrase in low for phrase in skip_phrases):
+            continue
+
+        count, label = parse_count_prefix(line)
+        if count is not None and not viewer_section:
+            key = slugify_key(label)
+            key = key.replace("found_you_through_homepage", "found_through_homepage")
+            result["summary"][key] = count
+            continue
+
+        if viewer_section:
+            result["visible_viewer_details"].append(parse_viewer(line))
+
+    enrich_snapshot_counts(result)
+    return result
+
+
+def enrich_snapshot_counts(snapshot: dict[str, Any]) -> None:
+    viewers = snapshot.get("visible_viewer_details", [])
+
+    companies = Counter()
+    roles = Counter()
+    industries = Counter()
+    locations = Counter()
+
+    for viewer in viewers:
+        if viewer.get("company"):
+            companies[viewer["company"]] += 1
+        if viewer.get("role"):
+            roles[viewer["role"]] += 1
+        if viewer.get("industry"):
+            industries[viewer["industry"]] += 1
+        if viewer.get("location"):
+            locations[viewer["location"]] += 1
+
+    snapshot["derived"] = {
+        "visible_viewer_count": len(viewers),
+        "unique_visible_viewer_keys": len({v["viewer_key"] for v in viewers}),
+        "companies": dict(companies.most_common()),
+        "roles": dict(roles.most_common()),
+        "industries": dict(industries.most_common()),
+        "locations": dict(locations.most_common()),
+    }
+
+
+def make_snapshot(text: str, note: Optional[str] = None) -> dict[str, Any]:
+    captured_at = utc_now_iso()
+    parsed = parse_linkedin_profile_viewers(text)
+
+    return {
+        "snapshot_id": hashlib.sha1(
+            (captured_at + "\n" + text).encode("utf-8")
+        ).hexdigest()[:12],
+        "captured_at": captured_at,
+        "note": note,
+        "data": parsed,
+    }
+
+
+def load_snapshots(db_path: Path) -> list[dict[str, Any]]:
+    if not db_path.exists():
+        return []
+
+    snapshots = []
+    with db_path.open("r", encoding="utf-8") as file:
+        for line_no, line in enumerate(file, start=1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                snapshots.append(json.loads(line))
+            except json.JSONDecodeError as err:
+                raise ValueError(f"Bad JSON on line {line_no} of {db_path}: {err}") from err
+
+    return snapshots
+
+
+def append_snapshot(db_path: Path, snapshot: dict[str, Any]) -> None:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with db_path.open("a", encoding="utf-8") as file:
+        file.write(json.dumps(snapshot, ensure_ascii=False, sort_keys=True))
+        file.write("\n")
+
+
+def diff_snapshots(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
+    old_data = old["data"]
+    new_data = new["data"]
+
+    old_viewers = old_data.get("visible_viewer_details", [])
+    new_viewers = new_data.get("visible_viewer_details", [])
+
+    old_keys = {viewer["viewer_key"]: viewer for viewer in old_viewers}
+    new_keys = {viewer["viewer_key"]: viewer for viewer in new_viewers}
+
+    added_keys = sorted(set(new_keys) - set(old_keys))
+    removed_keys = sorted(set(old_keys) - set(new_keys))
+    retained_keys = sorted(set(old_keys) & set(new_keys))
+
+    old_total = old_data.get("reported_profile_viewers_past_90_days")
+    new_total = new_data.get("reported_profile_viewers_past_90_days")
+
+    old_private = old_data.get("summary", {}).get("private_mode_viewers")
+    new_private = new_data.get("summary", {}).get("private_mode_viewers")
+
+    return {
+        "old_snapshot_id": old.get("snapshot_id"),
+        "new_snapshot_id": new.get("snapshot_id"),
+        "old_captured_at": old.get("captured_at"),
+        "new_captured_at": new.get("captured_at"),
+        "reported_profile_viewers_past_90_days": {
+            "old": old_total,
+            "new": new_total,
+            "delta": delta(old_total, new_total),
+        },
+        "private_mode_viewers": {
+            "old": old_private,
+            "new": new_private,
+            "delta": delta(old_private, new_private),
+        },
+        "visible_viewer_count": {
+            "old": len(old_viewers),
+            "new": len(new_viewers),
+            "delta": len(new_viewers) - len(old_viewers),
+        },
+        "viewer_changes": {
+            "added": [new_keys[key] for key in added_keys],
+            "removed": [old_keys[key] for key in removed_keys],
+            "retained_count": len(retained_keys),
+        },
+        "company_changes": counter_diff(
+            old_data.get("derived", {}).get("companies", {}),
+            new_data.get("derived", {}).get("companies", {}),
+        ),
+        "role_changes": counter_diff(
+            old_data.get("derived", {}).get("roles", {}),
+            new_data.get("derived", {}).get("roles", {}),
+        ),
+    }
+
+
+def delta(old: Any, new: Any) -> Optional[int]:
+    if isinstance(old, int) and isinstance(new, int):
+        return new - old
+    return None
+
+
+def counter_diff(old: dict[str, int], new: dict[str, int]) -> dict[str, Any]:
+    changed = {}
+    for key in sorted(set(old) | set(new)):
+        old_value = old.get(key, 0)
+        new_value = new.get(key, 0)
+        if old_value != new_value:
+            changed[key] = {
+                "old": old_value,
+                "new": new_value,
+                "delta": new_value - old_value,
+            }
+
+    return changed
+
+
+def read_input_text(file_arg: Optional[str]) -> str:
+    if file_arg:
+        return Path(file_arg).read_text(encoding="utf-8")
+    return sys.stdin.read()
+
+
+def cmd_add(args: argparse.Namespace) -> None:
+    db_path = Path(args.db)
+    text = read_input_text(args.file)
+    snapshot = make_snapshot(text, note=args.note)
+    append_snapshot(db_path, snapshot)
+    print(json.dumps(snapshot, ensure_ascii=False, indent=2))
+
+
+def cmd_list(args: argparse.Namespace) -> None:
+    snapshots = load_snapshots(Path(args.db))
+
+    rows = []
+    for snapshot in snapshots:
+        data = snapshot.get("data", {})
+        rows.append(
+            {
+                "snapshot_id": snapshot.get("snapshot_id"),
+                "captured_at": snapshot.get("captured_at"),
+                "note": snapshot.get("note"),
+                "period": data.get("period"),
+                "reported_90_day_viewers": data.get(
+                    "reported_profile_viewers_past_90_days"
+                ),
+                "visible_viewer_count": data.get("derived", {}).get(
+                    "visible_viewer_count"
+                ),
+                "private_mode_viewers": data.get("summary", {}).get(
+                    "private_mode_viewers"
+                ),
+            }
+        )
+
+    print(json.dumps(rows, ensure_ascii=False, indent=2))
+
+
+def cmd_latest(args: argparse.Namespace) -> None:
+    snapshots = load_snapshots(Path(args.db))
+    if not snapshots:
+        print("No snapshots found.", file=sys.stderr)
+        sys.exit(1)
+
+    print(json.dumps(snapshots[-1], ensure_ascii=False, indent=2))
+
+
+def cmd_diff(args: argparse.Namespace) -> None:
+    snapshots = load_snapshots(Path(args.db))
+    if len(snapshots) < 2:
+        print("Need at least two snapshots to diff.", file=sys.stderr)
+        sys.exit(1)
+
+    if args.old and args.new:
+        by_id = {snapshot.get("snapshot_id"): snapshot for snapshot in snapshots}
+        if args.old not in by_id:
+            print(f"Old snapshot not found: {args.old}", file=sys.stderr)
+            sys.exit(1)
+        if args.new not in by_id:
+            print(f"New snapshot not found: {args.new}", file=sys.stderr)
+            sys.exit(1)
+        old = by_id[args.old]
+        new = by_id[args.new]
+    else:
+        old = snapshots[-2]
+        new = snapshots[-1]
+
+    print(json.dumps(diff_snapshots(old, new), ensure_ascii=False, indent=2))
+
+
+def cmd_export(args: argparse.Namespace) -> None:
+    snapshots = load_snapshots(Path(args.db))
+    print(json.dumps(snapshots, ensure_ascii=False, indent=2))
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Track LinkedIn profile-viewer snapshots over time."
+    )
+    parser.add_argument(
+        "--db",
+        default=DEFAULT_DB,
+        help=f"JSONL storage file. Default: {DEFAULT_DB}",
+    )
+
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_add = sub.add_parser("add", help="Parse input and append a new snapshot.")
+    p_add.add_argument("file", nargs="?", help="Input text file. Reads stdin if omitted.")
+    p_add.add_argument("--note", help="Optional note for this snapshot.")
+    p_add.set_defaults(func=cmd_add)
+
+    p_list = sub.add_parser("list", help="List saved snapshots.")
+    p_list.set_defaults(func=cmd_list)
+
+    p_latest = sub.add_parser("latest", help="Show the latest saved snapshot.")
+    p_latest.set_defaults(func=cmd_latest)
+
+    p_diff = sub.add_parser("diff", help="Diff latest two snapshots by default.")
+    p_diff.add_argument("--old", help="Old snapshot_id to compare.")
+    p_diff.add_argument("--new", help="New snapshot_id to compare.")
+    p_diff.set_defaults(func=cmd_diff)
+
+    p_export = sub.add_parser("export", help="Export all snapshots as JSON array.")
+    p_export.set_defaults(func=cmd_export)
+
+    return parser
+
+
+def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

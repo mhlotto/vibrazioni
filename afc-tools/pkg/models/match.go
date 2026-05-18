@@ -10,6 +10,7 @@ const (
 )
 
 type Match struct {
+	ID            int         `json:"id,omitempty"`
 	MonthLabel    string      `json:"month_label"`
 	Kickoff       time.Time   `json:"kickoff"`
 	KickoffLabel  string      `json:"kickoff_label"`

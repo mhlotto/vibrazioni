@@ -22,3 +22,8 @@ func main() {
 		os.Exit(1)
 	}
 }
+
+func init() {
+	rootCmd.PersistentFlags().StringVar(&footballDataToken, "football-data-token", "", "football-data.org API token (default: AFC_FDAPI_TOKEN)")
+	rootCmd.PersistentFlags().StringVar(&footballDataBaseURL, "football-data-base-url", "", "football-data.org API base URL override")
+}

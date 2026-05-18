@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/mhlotto/vibrazioni/afc-tools/pkg/cache"
-	"github.com/mhlotto/vibrazioni/afc-tools/pkg/client"
 	"github.com/mhlotto/vibrazioni/afc-tools/pkg/models"
 	"github.com/spf13/cobra"
 )
@@ -15,6 +14,7 @@ import (
 var (
 	pastDays     int
 	pastCacheDir string
+	pastSource   string
 )
 
 func init() {
@@ -33,23 +33,21 @@ func init() {
 
 	pastCmd.Flags().IntVar(&pastDays, "days", 7, "Number of days back to include")
 	pastCmd.Flags().StringVar(&pastCacheDir, "cache-dir", defaultCacheDir, "Cache directory path")
+	pastCmd.Flags().StringVar(&pastSource, "source", sourceArsenal, "Data source: arsenal or football-data")
 
 	rootCmd.AddCommand(pastCmd)
 }
 
 func runPast(w io.Writer) error {
-	dataCache := cache.New(pastCacheDir)
-	c := client.New("")
-
-	fixtures, err := c.GetPastFixturesWithinNDays(context.Background(), pastDays, dataCache)
+	fixtures, err := pastFixtures(context.Background(), pastSource, pastDays, pastCacheDir)
 	if err != nil {
 		return err
 	}
 
-	return writePastFixtures(w, fixtures, pastDays)
+	return writePastFixtures(w, fixtures, pastDays, normalizedSource(pastSource) == sourceFootballData)
 }
 
-func writePastFixtures(w io.Writer, fixtures []models.Match, days int) error {
+func writePastFixtures(w io.Writer, fixtures []models.Match, days int, showIDs bool) error {
 	if len(fixtures) == 0 {
 		_, err := fmt.Fprintf(w, "No past fixtures in the last %d days.\n", days)
 		return err
@@ -58,15 +56,18 @@ func writePastFixtures(w io.Writer, fixtures []models.Match, days int) error {
 	for _, fixture := range fixtures {
 		kickoff := fixture.Kickoff.In(time.Local).Format("Mon Jan 2 15:04 MST")
 		score := fixture.RawScoreText
-		if _, err := fmt.Fprintf(
-			w,
-			"%s | %s %s %s | %s\n",
+		line := fmt.Sprintf(
+			"%s | %s %s %s | %s",
 			kickoff,
 			fixture.HomeTeam,
 			score,
 			fixture.AwayTeam,
 			fixture.Competition,
-		); err != nil {
+		)
+		if showIDs && fixture.ID > 0 {
+			line = fmt.Sprintf("%d | %s", fixture.ID, line)
+		}
+		if _, err := fmt.Fprintln(w, line); err != nil {
 			return err
 		}
 	}
