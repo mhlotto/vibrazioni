@@ -2,14 +2,27 @@
 """
 Track LinkedIn "Who's viewed your profile" snapshots over time.
 
-Examples:
+Usage:
 
+  # Paste from clipboard/stdin and append a new snapshot
   pbpaste | linkedin-view-tracker add
+
+  # Or from a text file
   linkedin-view-tracker add input.txt
+
+  # Use a custom storage file
   linkedin-view-tracker --db my_views.jsonl add input.txt
+
+  # Show all saved snapshots
   linkedin-view-tracker list
+
+  # Show latest snapshot
   linkedin-view-tracker latest
+
+  # Compare latest snapshot to previous one
   linkedin-view-tracker diff
+
+  # Export all snapshots as a JSON array
   linkedin-view-tracker export > all_snapshots.json
 """
 
@@ -58,6 +71,36 @@ def slugify_key(value: str) -> str:
     value = re.sub(r"[^a-z0-9]+", "_", value)
     value = re.sub(r"_+", "_", value)
     return value.strip("_")
+
+
+def is_viewer_detail_line(line: str) -> bool:
+    if re.match(r"^Someone at\s+.+$", line):
+        return True
+    if re.match(r"^.+?\s+in the\s+.+?\s+industry\s+from\s+.+$", line):
+        return True
+    if re.match(r"^.+?\s+at\s+.+$", line):
+        return True
+    return False
+
+
+def is_viewer_detail_end_line(line: str) -> bool:
+    low = line.lower()
+    footer_lines = {
+        "about",
+        "accessibility",
+        "help center",
+        "privacy & terms",
+        "ad choices",
+        "advertising",
+        "business services",
+        "get the linkedin app",
+        "more",
+    }
+    return (
+        low in footer_lines
+        or low.startswith("linkedin corporation ")
+        or low == "these people viewed your profile in private mode"
+    )
 
 
 def parse_viewer(line: str) -> dict[str, Any]:
@@ -127,6 +170,7 @@ def parse_linkedin_profile_viewers(text: str) -> dict[str, Any]:
         "who's viewed your profile",
         "who\u2019s viewed your profile",
         "profile viewers in the past",
+        "these people viewed your profile in private mode",
         "see who\u2019s viewed your profile",
         "see who's viewed your profile",
         "for a limited time",
@@ -143,6 +187,9 @@ def parse_linkedin_profile_viewers(text: str) -> dict[str, Any]:
 
     for i, line in enumerate(lines):
         low = line.lower()
+
+        if viewer_section and is_viewer_detail_end_line(line):
+            break
 
         if low.startswith("past "):
             result["period"] = line
@@ -174,10 +221,38 @@ def parse_linkedin_profile_viewers(text: str) -> dict[str, Any]:
             continue
 
         if viewer_section:
-            result["visible_viewer_details"].append(parse_viewer(line))
+            if is_viewer_detail_line(line):
+                result["visible_viewer_details"].append(parse_viewer(line))
 
     enrich_snapshot_counts(result)
     return result
+
+
+def sanitize_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    data = snapshot.get("data")
+    if not isinstance(data, dict):
+        return snapshot
+
+    viewers = data.get("visible_viewer_details", [])
+    if not isinstance(viewers, list):
+        return snapshot
+
+    cleaned_viewers = []
+    for viewer in viewers:
+        if not isinstance(viewer, dict):
+            continue
+        description = viewer.get("description")
+        if not isinstance(description, str):
+            continue
+        if is_viewer_detail_end_line(description):
+            continue
+        if not is_viewer_detail_line(description):
+            continue
+        cleaned_viewers.append(viewer)
+
+    data["visible_viewer_details"] = cleaned_viewers
+    enrich_snapshot_counts(data)
+    return snapshot
 
 
 def enrich_snapshot_counts(snapshot: dict[str, Any]) -> None:
@@ -233,7 +308,7 @@ def load_snapshots(db_path: Path) -> list[dict[str, Any]]:
             if not line:
                 continue
             try:
-                snapshots.append(json.loads(line))
+                snapshots.append(sanitize_snapshot(json.loads(line)))
             except json.JSONDecodeError as err:
                 raise ValueError(f"Bad JSON on line {line_no} of {db_path}: {err}") from err
 
