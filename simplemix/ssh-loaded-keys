@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  echo "Usage: $(basename "$0") [--with-key]" >&2
+  echo "Print ~/.ssh key filenames whose public keys are loaded in ssh-agent." >&2
+  echo "Use --with-key to print '<filename> <ssh-add -L key>'." >&2
+}
+
+with_key=0
+
+if [[ $# -gt 0 ]]; then
+  case "${1:-}" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --with-key)
+      with_key=1
+      shift
+      ;;
+    *)
+      usage
+      exit 2
+      ;;
+  esac
+fi
+
+if [[ $# -ne 0 ]]; then
+  usage
+  exit 2
+fi
+
+ssh_dir="${SSH_KEY_DIR:-$HOME/.ssh}"
+
+if [[ ! -d "$ssh_dir" ]]; then
+  exit 0
+fi
+
+shopt -s nullglob
+
+while IFS= read -r agent_key; do
+  [[ -n "$agent_key" ]] || continue
+
+  set -- $agent_key
+  [[ $# -ge 2 ]] || continue
+  agent_key_prefix="$1 $2"
+
+  match=""
+  for public_key_file in "$ssh_dir"/*.pub; do
+    private_key_file="${public_key_file%.pub}"
+    [[ -f "$private_key_file" ]] || continue
+
+    public_key_line="$(sed -n '1p' "$public_key_file")"
+    set -- $public_key_line
+    [[ $# -ge 2 ]] || continue
+    public_key_prefix="$1 $2"
+
+    if [[ "$public_key_prefix" == "$agent_key_prefix" ]]; then
+      match="$(basename "$private_key_file")"
+      break
+    fi
+  done
+
+  if [[ -n "$match" ]]; then
+    if [[ "$with_key" -eq 1 ]]; then
+      printf '%s %s\n' "$match" "$agent_key"
+    else
+      printf '%s\n' "$match"
+    fi
+  fi
+done < <(ssh-add -L 2>/dev/null || true)
