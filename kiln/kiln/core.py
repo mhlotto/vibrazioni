@@ -3,6 +3,10 @@ from __future__ import annotations
 import html
 import re
 import shutil
+import tarfile
+import tempfile
+import urllib.error
+import urllib.request
 import zipfile
 from dataclasses import dataclass
 from html.parser import HTMLParser
@@ -59,6 +63,14 @@ PACKAGE_REGISTRY = {
         script_tag='<script defer src="/vendor/mathjax/es5/tex-mml-chtml.js"></script>',
     )
 }
+
+PACKAGE_TARBALL_REGISTRY = {
+    "mathjax": "https://registry.npmjs.org/mathjax/-/mathjax-{version}.tgz",
+}
+DEFAULT_PACKAGE_VERSIONS = {
+    "mathjax": "3.2.2",
+}
+DOWNLOAD_TIMEOUT_SECONDS = 30
 
 
 class AssetPolicyParser(HTMLParser):
@@ -272,13 +284,111 @@ def vendor_package(site_root: Path, package_name: str, source_dir: Path, force: 
     if is_relative_to(resolved_destination, resolved_source):
         raise KilnError("destination must not be inside the source directory")
     if destination.exists() and any(destination.iterdir()) and not force:
-        raise KilnError(f"vendor destination already exists: {destination}")
+        if not is_vendor_placeholder_dir(destination):
+            raise KilnError(f"vendor destination already exists: {destination}")
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists():
         shutil.rmtree(destination)
     shutil.copytree(source_dir, destination, symlinks=True)
     return destination
+
+
+def is_vendor_placeholder_dir(destination: Path) -> bool:
+    if not destination.is_dir():
+        return False
+    entries = list(destination.iterdir())
+    return len(entries) == 1 and entries[0].name == "README.md" and entries[0].is_file()
+
+
+def download_vendor_package(
+    site_root: Path,
+    package_name: str,
+    version: Optional[str] = None,
+    force: bool = False,
+) -> Path:
+    if package_name not in PACKAGE_REGISTRY:
+        raise KilnError(f"unknown package: {package_name}")
+    if package_name not in PACKAGE_TARBALL_REGISTRY:
+        raise KilnError(f"package does not support downloads: {package_name}")
+
+    package_version = version or DEFAULT_PACKAGE_VERSIONS[package_name]
+    tarball_url = package_tarball_url(package_name, package_version)
+
+    with tempfile.TemporaryDirectory(prefix=f"kiln-{package_name}-") as temp_name:
+        temp_dir = Path(temp_name)
+        tarball_path = temp_dir / f"{package_name}.tgz"
+        extract_dir = temp_dir / "extract"
+        extract_dir.mkdir()
+
+        download_tarball(tarball_url, tarball_path)
+        safe_extract_tarball(tarball_path, extract_dir)
+        package_dir = extracted_package_dir(extract_dir, package_name)
+        return vendor_package(site_root, package_name, package_dir, force=force)
+
+
+def package_tarball_url(package_name: str, version: str) -> str:
+    try:
+        template = PACKAGE_TARBALL_REGISTRY[package_name]
+    except KeyError as err:
+        raise KilnError(f"package does not support downloads: {package_name}") from err
+    return template.format(version=version)
+
+
+def download_tarball(
+    url: str,
+    destination: Path,
+    timeout: int = DOWNLOAD_TIMEOUT_SECONDS,
+) -> None:
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            with destination.open("wb") as file:
+                shutil.copyfileobj(response, file)
+    except (urllib.error.URLError, TimeoutError, OSError) as err:
+        raise KilnError(f"could not download package from {url}: {err}") from err
+
+
+def safe_extract_tarball(tarball_path: Path, destination: Path) -> None:
+    resolved_destination = destination.resolve(strict=False)
+    try:
+        with tarfile.open(tarball_path, "r:gz") as archive:
+            members = archive.getmembers()
+            for member in members:
+                member_path = Path(member.name)
+                if member_path.is_absolute():
+                    raise KilnError(f"unsafe package archive member uses absolute path: {member.name}")
+                if ".." in member_path.parts:
+                    raise KilnError(f"unsafe package archive member contains '..': {member.name}")
+                if member.issym():
+                    raise KilnError(f"unsafe package archive member is a symlink: {member.name}")
+                if member.islnk():
+                    raise KilnError(f"unsafe package archive member is a hardlink: {member.name}")
+
+                resolved_member = (destination / member.name).resolve(strict=False)
+                if not is_relative_to(resolved_member, resolved_destination):
+                    raise KilnError(
+                        f"unsafe package archive member resolves outside extraction directory: {member.name}"
+                    )
+
+            archive.extractall(destination, members)
+    except tarfile.TarError as err:
+        raise KilnError(f"could not extract package archive: {err}") from err
+
+
+def extracted_package_dir(extract_dir: Path, package_name: str) -> Path:
+    spec = PACKAGE_REGISTRY[package_name]
+    relative_entrypoint = spec.entrypoint.relative_to(spec.vendor_dir)
+    candidates = [extract_dir / "package", extract_dir]
+    candidates.extend(child for child in extract_dir.iterdir() if child.is_dir())
+
+    for candidate in candidates:
+        if (candidate / relative_entrypoint).is_file():
+            return candidate
+
+    raise KilnError(
+        f"downloaded package does not look like a supported {package_name} "
+        f"distribution: missing {relative_entrypoint}"
+    )
 
 
 def load_site_config(path: Path) -> Tuple[dict[str, Any], List[str]]:
@@ -850,7 +960,18 @@ STARTER_TEMPLATE_HTML = """<!doctype html>
 
 MATHJAX_VENDOR_README = """# MathJax vendor files
 
-Place a local MathJax distribution in this directory.
+Place a local MathJax distribution in this directory, or let Kiln install the
+pinned local copy:
+
+```sh
+kiln vendor mathjax --download
+```
+
+For offline installs, copy an existing local distribution:
+
+```sh
+kiln vendor mathjax --from /path/to/mathjax
+```
 
 Kiln expects this entrypoint to exist before building pages that request
 MathJax:
@@ -859,5 +980,6 @@ MathJax:
 vendor/mathjax/es5/tex-mml-chtml.js
 ```
 
-Kiln does not download MathJax and does not generate CDN URLs.
+Kiln does not download MathJax during validation or build and does not
+generate CDN URLs.
 """

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import io
+import shutil
+import tarfile
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
@@ -7,7 +10,7 @@ from unittest.mock import patch
 import pytest
 
 from kiln.cli import main
-from kiln.core import KilnError, validate_site
+from kiln.core import KilnError, download_vendor_package, validate_site
 
 
 MATHJAX_SCRIPT = '<script defer src="/vendor/mathjax/es5/tex-mml-chtml.js"></script>'
@@ -61,6 +64,42 @@ def make_mathjax_source(root: Path, name: str = "mathjax-src") -> Path:
     entrypoint.write_text("source MathJax", encoding="utf-8")
     (source / "README.md").write_text("mathjax source", encoding="utf-8")
     return source
+
+
+def make_mathjax_tarball(path: Path, include_entrypoint: bool = True) -> Path:
+    with tarfile.open(path, "w:gz") as archive:
+        if include_entrypoint:
+            data = b"downloaded MathJax"
+            info = tarfile.TarInfo("package/es5/tex-mml-chtml.js")
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+        readme = b"mathjax package"
+        readme_info = tarfile.TarInfo("package/README.md")
+        readme_info.size = len(readme)
+        archive.addfile(readme_info, io.BytesIO(readme))
+    return path
+
+
+def make_unsafe_tarball(path: Path, member_name: str, link_type=None) -> Path:
+    with tarfile.open(path, "w:gz") as archive:
+        info = tarfile.TarInfo(member_name)
+        if link_type:
+            info.type = link_type
+            info.linkname = "package/es5/tex-mml-chtml.js"
+            archive.addfile(info)
+        else:
+            data = b"bad"
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+    return path
+
+
+def mock_download(monkeypatch: pytest.MonkeyPatch, tarball: Path, calls: list[str]) -> None:
+    def fake_download(url: str, destination: Path, timeout: int = 30) -> None:
+        calls.append(url)
+        shutil.copy2(tarball, destination)
+
+    monkeypatch.setattr("kiln.core.download_tarball", fake_download)
 
 
 def request_mathjax(root: Path, page_path: str = "index.yml") -> None:
@@ -769,6 +808,206 @@ def test_vendor_mathjax_allows_mathjax_page_to_validate(tmp_path: Path) -> None:
 
     assert main(["vendor", "mathjax", "--from", str(source), "--force", str(tmp_path)]) == 0
     assert main(["validate", str(tmp_path)]) == 0
+
+
+def test_vendor_mathjax_download_installs_mathjax(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    write_minimal_site(tmp_path)
+    tarball = make_mathjax_tarball(tmp_path / "mathjax.tgz")
+    calls: list[str] = []
+    mock_download(monkeypatch, tarball, calls)
+
+    assert main(["vendor", "mathjax", "--download", str(tmp_path)]) == 0
+
+    entrypoint = tmp_path / "vendor" / "mathjax" / "es5" / "tex-mml-chtml.js"
+    assert entrypoint.read_text(encoding="utf-8") == "downloaded MathJax"
+
+
+def test_vendor_mathjax_download_replaces_init_placeholder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    site = tmp_path / "site"
+    assert main(["init", str(site)]) == 0
+    tarball = make_mathjax_tarball(tmp_path / "mathjax.tgz")
+    calls: list[str] = []
+    mock_download(monkeypatch, tarball, calls)
+
+    assert main(["vendor", "mathjax", "--download", str(site)]) == 0
+
+    assert (site / "vendor" / "mathjax" / "README.md").read_text(
+        encoding="utf-8"
+    ) == "mathjax package"
+    assert (site / "vendor" / "mathjax" / "es5" / "tex-mml-chtml.js").is_file()
+
+
+def test_vendor_mathjax_download_default_version_is_pinned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_minimal_site(tmp_path)
+    tarball = make_mathjax_tarball(tmp_path / "mathjax.tgz")
+    calls: list[str] = []
+    mock_download(monkeypatch, tarball, calls)
+
+    assert main(["vendor", "mathjax", "--download", str(tmp_path)]) == 0
+
+    assert calls == ["https://registry.npmjs.org/mathjax/-/mathjax-3.2.2.tgz"]
+
+
+def test_vendor_mathjax_download_version_changes_requested_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_minimal_site(tmp_path)
+    tarball = make_mathjax_tarball(tmp_path / "mathjax.tgz")
+    calls: list[str] = []
+    mock_download(monkeypatch, tarball, calls)
+
+    assert main(["vendor", "mathjax", "--download", "--version", "3.2.1", str(tmp_path)]) == 0
+
+    assert calls == ["https://registry.npmjs.org/mathjax/-/mathjax-3.2.1.tgz"]
+
+
+def test_vendor_mathjax_requires_exactly_one_source_mode(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    source = make_mathjax_source(tmp_path)
+
+    assert main(["vendor", "mathjax", str(tmp_path)]) == 1
+    assert main(["vendor", "mathjax", "--from", str(source), "--download", str(tmp_path)]) == 1
+
+
+def test_vendor_mathjax_version_without_download_fails(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    source = make_mathjax_source(tmp_path)
+
+    assert main(["vendor", "mathjax", "--from", str(source), "--version", "3.2.2", str(tmp_path)]) == 1
+
+
+def test_vendor_mathjax_download_refuses_overwrite_without_force(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_minimal_site(tmp_path)
+    tarball = make_mathjax_tarball(tmp_path / "mathjax.tgz")
+    calls: list[str] = []
+    mock_download(monkeypatch, tarball, calls)
+    destination = tmp_path / "vendor" / "mathjax"
+    destination.mkdir(parents=True)
+    (destination / "existing.txt").write_text("old", encoding="utf-8")
+
+    assert main(["vendor", "mathjax", "--download", str(tmp_path)]) == 1
+    assert (destination / "existing.txt").read_text(encoding="utf-8") == "old"
+
+
+def test_vendor_mathjax_download_force_overwrites_existing_vendor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_minimal_site(tmp_path)
+    tarball = make_mathjax_tarball(tmp_path / "mathjax.tgz")
+    calls: list[str] = []
+    mock_download(monkeypatch, tarball, calls)
+    destination = tmp_path / "vendor" / "mathjax"
+    destination.mkdir(parents=True)
+    (destination / "existing.txt").write_text("old", encoding="utf-8")
+
+    assert main(["vendor", "mathjax", "--download", "--force", str(tmp_path)]) == 0
+
+    assert not (destination / "existing.txt").exists()
+    assert (destination / "es5" / "tex-mml-chtml.js").is_file()
+
+
+def test_vendor_mathjax_download_missing_entrypoint_fails_clearly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_minimal_site(tmp_path)
+    tarball = make_mathjax_tarball(tmp_path / "mathjax.tgz", include_entrypoint=False)
+    calls: list[str] = []
+    mock_download(monkeypatch, tarball, calls)
+
+    with pytest.raises(KilnError, match="downloaded package does not look like"):
+        download_vendor_package(tmp_path, "mathjax")
+
+
+def test_vendor_mathjax_download_rejects_absolute_tar_member(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_minimal_site(tmp_path)
+    tarball = make_unsafe_tarball(tmp_path / "mathjax.tgz", "/evil.js")
+    calls: list[str] = []
+    mock_download(monkeypatch, tarball, calls)
+
+    with pytest.raises(KilnError, match="absolute path"):
+        download_vendor_package(tmp_path, "mathjax")
+
+
+def test_vendor_mathjax_download_rejects_parent_traversal_tar_member(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_minimal_site(tmp_path)
+    tarball = make_unsafe_tarball(tmp_path / "mathjax.tgz", "package/../evil.js")
+    calls: list[str] = []
+    mock_download(monkeypatch, tarball, calls)
+
+    with pytest.raises(KilnError, match="contains '..'"):
+        download_vendor_package(tmp_path, "mathjax")
+
+
+def test_vendor_mathjax_download_rejects_tar_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_minimal_site(tmp_path)
+    tarball = make_unsafe_tarball(
+        tmp_path / "mathjax.tgz", "package/linked.js", tarfile.SYMTYPE
+    )
+    calls: list[str] = []
+    mock_download(monkeypatch, tarball, calls)
+
+    with pytest.raises(KilnError, match="symlink"):
+        download_vendor_package(tmp_path, "mathjax")
+
+
+def test_vendor_mathjax_download_rejects_tar_hardlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_minimal_site(tmp_path)
+    tarball = make_unsafe_tarball(
+        tmp_path / "mathjax.tgz", "package/linked.js", tarfile.LNKTYPE
+    )
+    calls: list[str] = []
+    mock_download(monkeypatch, tarball, calls)
+
+    with pytest.raises(KilnError, match="hardlink"):
+        download_vendor_package(tmp_path, "mathjax")
+
+
+def test_vendor_mathjax_downloaded_package_allows_mathjax_page_to_validate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_minimal_site(tmp_path)
+    allow_mathjax(tmp_path)
+    request_mathjax(tmp_path)
+    tarball = make_mathjax_tarball(tmp_path / "mathjax.tgz")
+    calls: list[str] = []
+    mock_download(monkeypatch, tarball, calls)
+
+    assert main(["vendor", "mathjax", "--download", str(tmp_path)]) == 0
+    assert main(["validate", str(tmp_path)]) == 0
+
+
+def test_vendor_mathjax_download_generates_no_cdn_urls(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_minimal_site(tmp_path)
+    allow_mathjax(tmp_path)
+    request_mathjax(tmp_path)
+    tarball = make_mathjax_tarball(tmp_path / "mathjax.tgz")
+    calls: list[str] = []
+    mock_download(monkeypatch, tarball, calls)
+
+    assert main(["vendor", "mathjax", "--download", str(tmp_path)]) == 0
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert MATHJAX_SCRIPT in html
+    assert "https://" not in html
+    assert "http://" not in html
+    assert 'src="//' not in html
 
 
 def test_clean_removes_stale_files_from_configured_output_dir(tmp_path: Path) -> None:

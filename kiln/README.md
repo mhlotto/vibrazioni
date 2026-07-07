@@ -9,7 +9,7 @@ Kiln is intentionally local-first:
 - no web framework
 - no live reload or file watching
 - no deployment integration
-- no network downloads
+- no network downloads during validation or build
 - no CDN-generated scripts
 
 ## Local Development Install
@@ -204,8 +204,14 @@ assets:
     - mathjax
 ```
 
-Kiln never downloads MathJax. Place an already-downloaded local MathJax
-distribution into:
+The easiest way to install MathJax locally is:
+
+```sh
+kiln vendor mathjax --download
+```
+
+Kiln downloads a pinned MathJax package tarball, currently version `3.2.2` by
+default, and installs it into:
 
 ```text
 vendor/mathjax/
@@ -217,11 +223,22 @@ The required entrypoint is:
 vendor/mathjax/es5/tex-mml-chtml.js
 ```
 
-You can copy a local distribution with:
+Generated sites still use only local files from your output directory. Kiln
+does not generate CDN URLs, and `kiln validate` and `kiln build` do not
+download MathJax automatically. If you need a specific version:
+
+```sh
+kiln vendor mathjax --download --version 3.2.2
+```
+
+For offline or manually managed installs, copy an already-downloaded local
+distribution with:
 
 ```sh
 kiln vendor mathjax --from /path/to/mathjax
 ```
+
+Use `--force` to replace an existing installed `vendor/mathjax/` directory.
 
 During build, Kiln copies `vendor/mathjax/` to
 `OUTPUT_DIR/vendor/mathjax/` and injects this local script tag only on pages

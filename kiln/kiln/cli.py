@@ -12,6 +12,7 @@ from .core import (
     KilnError,
     build_site,
     clean_site,
+    download_vendor_package,
     init_site,
     load_site_config,
     new_page,
@@ -93,15 +94,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_new_page.add_argument("slug", help="Page slug, such as about or posts/hello-world.")
     p_new_page.add_argument("path", nargs="?", default=".", help="Site directory.")
 
-    p_vendor = sub.add_parser("vendor", help="Copy local vendor packages into a site.")
+    p_vendor = sub.add_parser("vendor", help="Install vendor packages into a site.")
     vendor_sub = p_vendor.add_subparsers(dest="vendor_package", required=True)
-    p_vendor_mathjax = vendor_sub.add_parser("mathjax", help="Vendor a local MathJax distribution.")
+    p_vendor_mathjax = vendor_sub.add_parser(
+        "mathjax",
+        help="Vendor MathJax from a local directory or pinned download.",
+    )
     p_vendor_mathjax.add_argument(
         "--from",
         dest="source",
-        required=True,
         type=Path,
         help="Local MathJax distribution directory.",
+    )
+    p_vendor_mathjax.add_argument(
+        "--download",
+        action="store_true",
+        help="Download the pinned MathJax package tarball and vendor it locally.",
+    )
+    p_vendor_mathjax.add_argument(
+        "--version",
+        help="MathJax version to download. Only valid with --download. Default: 3.2.2.",
     )
     p_vendor_mathjax.add_argument("--force", action="store_true", help="Overwrite existing vendor files.")
     p_vendor_mathjax.add_argument("path", nargs="?", default=".", help="Site directory.")
@@ -177,6 +189,20 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         if args.command == "vendor":
             if args.vendor_package == "mathjax":
+                if bool(args.source) == bool(args.download):
+                    raise KilnError("exactly one of --from or --download is required")
+                if args.version and not args.download:
+                    raise KilnError("--version is only valid with --download")
+
+                if args.download:
+                    version = args.version or "3.2.2"
+                    print(f"Downloading mathjax {version}...")
+                    destination = download_vendor_package(
+                        path, "mathjax", version=version, force=args.force
+                    )
+                    print(f"Vendored mathjax {version} into {destination}")
+                    return 0
+
                 destination = vendor_package(path, "mathjax", args.source, force=args.force)
                 print(f"Vendored mathjax into {destination}")
                 return 0
