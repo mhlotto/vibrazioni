@@ -1,0 +1,18 @@
+page:
+  title: Math
+  path: /
+  layout: default
+packages:
+  - mathjax
+meta:
+  description: MathJax example page.
+content:
+  - type: markdown
+    value: |
+      # MathJax Example
+
+      Inline math can be rendered by the vendored MathJax bundle.
+
+  - type: math
+    value: |
+      E = mc^2

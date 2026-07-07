@@ -1,0 +1,12 @@
+page:
+  title: About
+  path: /about/
+  layout: default
+meta:
+  description: About the basic example.
+content:
+  - type: markdown
+    value: |
+      # About
+
+      This page demonstrates a second route.

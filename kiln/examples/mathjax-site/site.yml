@@ -1,0 +1,10 @@
+site:
+  title: MathJax Kiln Site
+build:
+  output_dir: public
+  content_dir: contents
+  static_dir: static
+  template_dir: templates
+assets:
+  allowed_js_packages:
+    - mathjax

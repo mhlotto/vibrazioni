@@ -1,0 +1,12 @@
+page:
+  title: Home
+  path: /
+  layout: default
+meta:
+  description: Basic Kiln example site.
+content:
+  - type: markdown
+    value: |
+      # Basic Kiln Site
+
+      This is the home page.
