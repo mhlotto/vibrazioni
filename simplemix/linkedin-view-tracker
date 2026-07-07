@@ -479,7 +479,18 @@ def cmd_export(args: argparse.Namespace) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Track LinkedIn profile-viewer snapshots over time."
+        description="Track LinkedIn profile-viewer snapshots over time.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Typical usage:
+
+  # Paste from clipboard/stdin and append a new snapshot
+  $ pbpaste | linkedin-view-tracker add
+
+  # Compare latest snapshot to previous one
+  $ linkedin-view-tracker diff
+
+  # Export all snapshots as a JSON array
+  $ linkedin-view-tracker export > all_snapshots.json""",
     )
     parser.add_argument(
         "--db",
