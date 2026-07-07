@@ -8,6 +8,7 @@ Simple tooling repo (mostly vibe play)
 - **plan-doc**: Plan document manager for PLAN####.md files, a sample plan format, and a skill template with copy script.
 - **git-tools**: Small git helpers like formatting untracked files from git status into a git add command.
 - **html-scripttags**: Extract HTML script tags with attribute filtering, tests, and a skill template with copy script.
+- **kiln**: Python MVP static site generator with YAML content, Jinja templates, local asset/package policy, serving, packaging, and examples.
 - **wwlp-tools**: Go CLI for extracting news from WWLP JSON responding endpoint.
 - **pvta-tools**: Go CLI for PVTA BusTracker InfoPoint routes, vehicles, stops, route status, stop departures, plus an Android app scaffold using gomobile to reuse the Go data layer.
 - **afc-tools**: Go CLI for Arsenal FC results and fixtures, with HTML parsing, typed match data, simple file cache support, and `upcoming` / `past` commands.
