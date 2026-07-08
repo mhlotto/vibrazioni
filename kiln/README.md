@@ -1,5 +1,7 @@
 # Kiln
 
+![Kiln logo](kiln-logo.png)
+
 Kiln is a small Python static site generator. It reads YAML page definitions,
 renders them through Jinja2 templates, copies static files, and writes a
 deployable static site.
