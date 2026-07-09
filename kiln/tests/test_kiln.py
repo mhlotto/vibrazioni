@@ -4,6 +4,7 @@ import io
 import shutil
 import tarfile
 import zipfile
+from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
@@ -74,6 +75,39 @@ integrations:
     )
 
 
+def enable_sitemap(root: Path, base_url: str = "https://example.com") -> None:
+    (root / "site.yml").write_text(
+        f"""site:
+  title: Test Site
+  base_url: "{base_url}"
+sitemap:
+  enabled: true
+""",
+        encoding="utf-8",
+    )
+
+
+def enable_robots(
+    root: Path,
+    base_url: str = "https://example.com",
+    allow_all: bool = True,
+    sitemap: bool = True,
+) -> None:
+    base_url_yaml = f'  base_url: "{base_url}"\n' if base_url else ""
+    allow_text = "true" if allow_all else "false"
+    sitemap_text = "true" if sitemap else "false"
+    (root / "site.yml").write_text(
+        f"""site:
+  title: Test Site
+{base_url_yaml}robots:
+  enabled: true
+  allow_all: {allow_text}
+  sitemap: {sitemap_text}
+""",
+        encoding="utf-8",
+    )
+
+
 def write_mathjax_entrypoint(root: Path) -> None:
     entrypoint = root / "vendor" / "mathjax" / "es5" / "tex-mml-chtml.js"
     entrypoint.parent.mkdir(parents=True)
@@ -137,6 +171,35 @@ packages:
 content:
   - type: markdown
     value: "# Hello"
+""",
+        encoding="utf-8",
+    )
+
+
+def write_post(
+    root: Path,
+    filename: str,
+    title: str,
+    page_path: str,
+    post_date: str,
+    draft: bool = False,
+    tags=None,
+) -> None:
+    tags = tags or []
+    tags_yaml = "[" + ", ".join(tags) + "]"
+    (root / "contents" / filename).parent.mkdir(parents=True, exist_ok=True)
+    (root / "contents" / filename).write_text(
+        f"""page:
+  title: {title}
+  path: {page_path}
+  layout: default
+post:
+  date: "{post_date}"
+  draft: {"true" if draft else "false"}
+  tags: {tags_yaml}
+content:
+  - type: markdown
+    value: "# {title}"
 """,
         encoding="utf-8",
     )
@@ -933,6 +996,499 @@ def test_build_copies_static_assets(tmp_path: Path) -> None:
     assert (tmp_path / "public" / "style.css").read_text(encoding="utf-8") == "body {}"
 
 
+def test_collections_posts_includes_non_draft_posts(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    write_post(tmp_path, "posts/hello.yml", "Hello", "/posts/hello/", "2026-07-09")
+    (tmp_path / "templates" / "default.html").write_text(
+        "{% for post in collections.posts %}<a href=\"{{ post.url }}\">{{ post.title }}</a>{% endfor %}",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert '<a href="/posts/hello/">Hello</a>' in html
+
+
+def test_collections_posts_excludes_draft_posts(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    write_post(tmp_path, "posts/draft.yml", "Draft", "/posts/draft/", "2026-07-09", draft=True)
+    (tmp_path / "templates" / "default.html").write_text(
+        "{% for post in collections.posts %}{{ post.title }}{% endfor %}",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert "Draft" not in html
+    assert (tmp_path / "public" / "posts" / "draft" / "index.html").is_file()
+
+
+def test_collections_posts_sorts_newest_first(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    write_post(tmp_path, "posts/older.yml", "Older", "/posts/older/", "2026-01-01")
+    write_post(tmp_path, "posts/newer.yml", "Newer", "/posts/newer/", "2026-07-09")
+    write_post(tmp_path, "posts/alpha.yml", "Alpha", "/posts/alpha/", "2026-07-09")
+    (tmp_path / "templates" / "default.html").write_text(
+        "{% for post in collections.posts %}{{ post.title }}|{% endfor %}",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert "Alpha|Newer|Older|" in html
+
+
+def test_collections_is_available_to_templates(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "templates" / "default.html").write_text(
+        "{{ collections.posts | length }}", encoding="utf-8"
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    assert (tmp_path / "public" / "index.html").read_text(encoding="utf-8") == "0"
+
+
+def test_blog_index_can_render_links_to_posts(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    write_post(tmp_path, "posts/hello.yml", "Hello", "/posts/hello/", "2026-07-09")
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Blog
+  path: /
+  layout: default
+content:
+  - type: markdown
+    value: "# Blog"
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "templates" / "default.html").write_text(
+        """<html><body>
+{{ content }}
+{% for post in collections.posts %}<a href="{{ post.path }}">{{ post.title }}</a>{% endfor %}
+</body></html>""",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert "<h1>Blog</h1>" in html
+    assert '<a href="/posts/hello/">Hello</a>' in html
+
+
+def test_sitemap_disabled_by_default_generates_no_sitemap(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    assert not (tmp_path / "public" / "sitemap.xml").exists()
+
+
+def test_sitemap_enabled_requires_base_url(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        """site:
+  title: Test Site
+sitemap:
+  enabled: true
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_sitemap_invalid_base_url_fails_validation(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_sitemap(tmp_path, base_url="example.com")
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_sitemap_generates_output_file_with_root_url(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_sitemap(tmp_path, base_url="https://example.com/")
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    xml = (tmp_path / "public" / "sitemap.xml").read_text(encoding="utf-8")
+    assert "<loc>https://example.com/</loc>" in xml
+
+
+def test_sitemap_nested_page_url_is_correct(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_sitemap(tmp_path)
+    assert main(["new", "page", "posts/hello-world", str(tmp_path)]) == 0
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    xml = (tmp_path / "public" / "sitemap.xml").read_text(encoding="utf-8")
+    assert "<loc>https://example.com/posts/hello-world/</loc>" in xml
+
+
+def test_sitemap_urls_are_sorted_deterministically(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_sitemap(tmp_path)
+    assert main(["new", "page", "zeta", str(tmp_path)]) == 0
+    assert main(["new", "page", "about", str(tmp_path)]) == 0
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    xml = (tmp_path / "public" / "sitemap.xml").read_text(encoding="utf-8")
+    root_index = xml.index("<loc>https://example.com/</loc>")
+    about_index = xml.index("<loc>https://example.com/about/</loc>")
+    zeta_index = xml.index("<loc>https://example.com/zeta/</loc>")
+    assert root_index < about_index < zeta_index
+
+
+def test_sitemap_escapes_urls(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_sitemap(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Escaped
+  path: /a&b/
+  layout: default
+content:
+  - type: markdown
+    value: "# Escaped"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    xml = (tmp_path / "public" / "sitemap.xml").read_text(encoding="utf-8")
+    assert "<loc>https://example.com/a&amp;b/</loc>" in xml
+
+
+def test_sitemap_excludes_static_assets(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_sitemap(tmp_path)
+    (tmp_path / "static" / "style.css").write_text("body {}", encoding="utf-8")
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    xml = (tmp_path / "public" / "sitemap.xml").read_text(encoding="utf-8")
+    assert "style.css" not in xml
+
+
+def test_sitemap_excludes_vendor_assets(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        """site:
+  title: Test Site
+  base_url: "https://example.com"
+sitemap:
+  enabled: true
+assets:
+  allowed_js_packages:
+    - mathjax
+""",
+        encoding="utf-8",
+    )
+    request_mathjax(tmp_path)
+    write_mathjax_entrypoint(tmp_path)
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    xml = (tmp_path / "public" / "sitemap.xml").read_text(encoding="utf-8")
+    assert "vendor/mathjax" not in xml
+    assert "tex-mml-chtml.js" not in xml
+
+
+def test_sitemap_includes_built_post_pages_unless_disabled(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_sitemap(tmp_path)
+    write_post(tmp_path, "posts/hello.yml", "Hello", "/posts/hello/", "2026-07-09")
+    (tmp_path / "contents" / "posts" / "hidden.yml").write_text(
+        """page:
+  title: Hidden
+  path: /posts/hidden/
+  layout: default
+post:
+  date: "2026-07-08"
+  draft: false
+  tags: []
+sitemap:
+  enabled: false
+content:
+  - type: markdown
+    value: "# Hidden"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    xml = (tmp_path / "public" / "sitemap.xml").read_text(encoding="utf-8")
+    assert "<loc>https://example.com/posts/hello/</loc>" in xml
+    assert "https://example.com/posts/hidden/" not in xml
+
+
+def test_page_sitemap_disabled_excludes_page(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_sitemap(tmp_path)
+    assert main(["new", "page", "about", str(tmp_path)]) == 0
+    (tmp_path / "contents" / "about.yml").write_text(
+        """page:
+  title: About
+  path: /about/
+  layout: default
+sitemap:
+  enabled: false
+content:
+  - type: markdown
+    value: "# About"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    xml = (tmp_path / "public" / "sitemap.xml").read_text(encoding="utf-8")
+    assert "<loc>https://example.com/</loc>" in xml
+    assert "https://example.com/about/" not in xml
+
+
+def test_page_sitemap_enabled_must_be_boolean(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_sitemap(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Home
+  path: /
+  layout: default
+sitemap:
+  enabled: yes please
+content:
+  - type: markdown
+    value: "# Hello"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_page_sitemap_enabled_true_does_not_generate_when_site_sitemap_disabled(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Home
+  path: /
+  layout: default
+sitemap:
+  enabled: true
+content:
+  - type: markdown
+    value: "# Hello"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    assert not (tmp_path / "public" / "sitemap.xml").exists()
+
+
+def test_sitemap_valid_changefreq_emits_changefreq(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_sitemap(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Home
+  path: /
+  layout: default
+sitemap:
+  changefreq: weekly
+content:
+  - type: markdown
+    value: "# Hello"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    xml = (tmp_path / "public" / "sitemap.xml").read_text(encoding="utf-8")
+    assert "<changefreq>weekly</changefreq>" in xml
+
+
+def test_sitemap_invalid_changefreq_fails_validation(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_sitemap(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Home
+  path: /
+  layout: default
+sitemap:
+  changefreq: sometimes
+content:
+  - type: markdown
+    value: "# Hello"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_sitemap_valid_priority_emits_priority(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_sitemap(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Home
+  path: /
+  layout: default
+sitemap:
+  priority: 0.8
+content:
+  - type: markdown
+    value: "# Hello"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    xml = (tmp_path / "public" / "sitemap.xml").read_text(encoding="utf-8")
+    assert "<priority>0.8</priority>" in xml
+
+
+def test_sitemap_priority_out_of_range_fails_validation(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_sitemap(tmp_path)
+    for priority in ("-0.1", "1.1"):
+        (tmp_path / "contents" / "index.yml").write_text(
+            f"""page:
+  title: Home
+  path: /
+  layout: default
+sitemap:
+  priority: {priority}
+content:
+  - type: markdown
+    value: "# Hello"
+""",
+            encoding="utf-8",
+        )
+        assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_sitemap_priority_must_be_numeric(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_sitemap(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Home
+  path: /
+  layout: default
+sitemap:
+  priority: high
+content:
+  - type: markdown
+    value: "# Hello"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_robots_disabled_by_default_generates_no_robots_txt(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    assert not (tmp_path / "public" / "robots.txt").exists()
+
+
+def test_robots_enabled_generates_robots_txt(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_robots(tmp_path)
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    assert (tmp_path / "public" / "robots.txt").is_file()
+
+
+def test_robots_allow_all_true_emits_allow(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_robots(tmp_path, allow_all=True)
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    text = (tmp_path / "public" / "robots.txt").read_text(encoding="utf-8")
+    assert "User-agent: *\nAllow: /" in text
+    assert "Disallow: /" not in text
+
+
+def test_robots_allow_all_false_emits_disallow(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_robots(tmp_path, allow_all=False)
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    text = (tmp_path / "public" / "robots.txt").read_text(encoding="utf-8")
+    assert "User-agent: *\nDisallow: /" in text
+    assert "Allow: /" not in text
+
+
+def test_robots_sitemap_true_emits_sitemap_line(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_robots(tmp_path, base_url="https://example.com/")
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    text = (tmp_path / "public" / "robots.txt").read_text(encoding="utf-8")
+    assert "Sitemap: https://example.com/sitemap.xml" in text
+
+
+def test_robots_sitemap_true_requires_valid_base_url(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_robots(tmp_path, base_url="")
+    assert main(["validate", str(tmp_path)]) == 1
+
+    enable_robots(tmp_path, base_url="example.com")
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_robots_sitemap_false_does_not_require_base_url(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_robots(tmp_path, base_url="", sitemap=False)
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    text = (tmp_path / "public" / "robots.txt").read_text(encoding="utf-8")
+    assert "Sitemap:" not in text
+
+
+def test_invalid_robots_booleans_fail_validation(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    for key in ("enabled", "allow_all", "sitemap"):
+        (tmp_path / "site.yml").write_text(
+            f"""site:
+  title: Test Site
+  base_url: "https://example.com"
+robots:
+  enabled: true
+  allow_all: true
+  sitemap: true
+  {key}: maybe
+""",
+            encoding="utf-8",
+        )
+        assert main(["validate", str(tmp_path)]) == 1
+
+
 def test_build_copies_mathjax_vendor_into_output(tmp_path: Path) -> None:
     write_minimal_site(tmp_path)
     allow_mathjax(tmp_path)
@@ -1467,6 +2023,140 @@ def test_new_page_generated_page_validates(tmp_path: Path) -> None:
     assert main(["validate", str(tmp_path)]) == 0
 
 
+def test_new_post_creates_post_file(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "templates" / "post.html").write_text(
+        "<html><body>{{ content }}</body></html>", encoding="utf-8"
+    )
+
+    assert main(["new", "post", "hello-world", str(tmp_path)]) == 0
+
+    post_file = tmp_path / "contents" / "posts" / "hello-world.yml"
+    assert post_file.is_file()
+    text = post_file.read_text(encoding="utf-8")
+    assert 'title: "Hello World"' in text
+    assert 'path: "/posts/hello-world/"' in text
+    assert 'layout: "post"' in text
+    assert f'date: "{date.today().isoformat()}"' in text
+
+
+def test_new_post_creates_nested_post_file(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+
+    assert main(["new", "post", "notes/hello-world", str(tmp_path)]) == 0
+
+    post_file = tmp_path / "contents" / "posts" / "notes" / "hello-world.yml"
+    assert post_file.is_file()
+    text = post_file.read_text(encoding="utf-8")
+    assert 'title: "Hello World"' in text
+    assert 'path: "/posts/notes/hello-world/"' in text
+
+
+def test_new_post_rejects_unsafe_slugs(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    unsafe_slugs = [
+        "/hello",
+        "hello/",
+        "posts//hello",
+        "../evil",
+        "posts/../evil",
+        "bad\\path",
+        "hello world",
+        "hello.html",
+    ]
+
+    for slug in unsafe_slugs:
+        assert main(["new", "post", slug, str(tmp_path)]) == 1
+
+
+def test_new_post_starter_yaml_validates(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "templates" / "post.html").write_text(
+        "<html><body>{{ content }}</body></html>", encoding="utf-8"
+    )
+
+    assert main(["new", "post", "hello-world", str(tmp_path)]) == 0
+    assert main(["validate", str(tmp_path)]) == 0
+
+
+def test_init_creates_post_template(tmp_path: Path) -> None:
+    site = tmp_path / "site"
+
+    assert main(["init", str(site)]) == 0
+
+    post_template = site / "templates" / "post.html"
+    assert post_template.is_file()
+    text = post_template.read_text(encoding="utf-8")
+    assert "{{ head_integrations_html | safe }}" in text
+    assert "{{ package_scripts_html | safe }}" in text
+
+
+def test_post_date_is_required(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Post
+  path: /
+  layout: default
+post:
+  draft: false
+content:
+  - type: markdown
+    value: "# Post"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_invalid_post_date_fails_validation(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    write_post(tmp_path, "index.yml", "Post", "/", "2026/07/09")
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_post_draft_must_be_boolean(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Post
+  path: /
+  layout: default
+post:
+  date: "2026-07-09"
+  draft: "false"
+content:
+  - type: markdown
+    value: "# Post"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_post_tags_must_be_list_of_strings(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Post
+  path: /
+  layout: default
+post:
+  date: "2026-07-09"
+  tags: [ok, 123]
+content:
+  - type: markdown
+    value: "# Post"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
 def test_package_creates_zip(tmp_path: Path) -> None:
     write_minimal_site(tmp_path)
 
@@ -1504,6 +2194,36 @@ def test_package_zip_excludes_source_files(tmp_path: Path) -> None:
     assert not any(name.startswith("static/") for name in names)
     assert not any(name.startswith("/") for name in names)
     assert not any(".." in Path(name).parts for name in names)
+
+
+def test_package_zip_includes_generated_sitemap(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_sitemap(tmp_path)
+    archive_path = tmp_path / "site.zip"
+
+    assert main(["package", "-o", str(archive_path), str(tmp_path)]) == 0
+
+    assert "sitemap.xml" in zip_names(archive_path)
+
+
+def test_package_zip_includes_generated_robots_txt(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_robots(tmp_path)
+    archive_path = tmp_path / "site.zip"
+
+    assert main(["package", "-o", str(archive_path), str(tmp_path)]) == 0
+
+    assert "robots.txt" in zip_names(archive_path)
+
+
+def test_package_zip_includes_generated_post_pages(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    write_post(tmp_path, "posts/hello.yml", "Hello", "/posts/hello/", "2026-07-09")
+    archive_path = tmp_path / "site.zip"
+
+    assert main(["package", "-o", str(archive_path), str(tmp_path)]) == 0
+
+    assert "posts/hello/index.html" in zip_names(archive_path)
 
 
 def test_package_runs_build_by_default(tmp_path: Path) -> None:
@@ -1633,10 +2353,104 @@ def test_end_to_end_smoke_init_new_validate_build_package(tmp_path: Path) -> Non
     assert not any(name.startswith("static/") for name in names)
 
 
+def test_end_to_end_sitemap_robots_ads_package_regression(tmp_path: Path) -> None:
+    site = tmp_path / "integrated-site"
+    archive_path = tmp_path / "integrated-site.zip"
+
+    assert main(["init", str(site)]) == 0
+    assert main(["new", "page", "no-ads", str(site)]) == 0
+    assert main(["new", "page", "hidden", str(site)]) == 0
+    (site / "site.yml").write_text(
+        f"""site:
+  title: Integrated Site
+  base_url: "https://example.com"
+build:
+  output_dir: public
+  content_dir: contents
+  static_dir: static
+  template_dir: templates
+sitemap:
+  enabled: true
+robots:
+  enabled: true
+  allow_all: true
+  sitemap: true
+integrations:
+  ads:
+    provider: adsense
+    enabled: true
+    mode: auto
+    client: {ADSENSE_CLIENT}
+""",
+        encoding="utf-8",
+    )
+    (site / "contents" / "no-ads.yml").write_text(
+        """page:
+  title: No Ads
+  path: /no-ads/
+  layout: default
+ads:
+  enabled: false
+content:
+  - type: markdown
+    value: "# No Ads"
+""",
+        encoding="utf-8",
+    )
+    (site / "contents" / "hidden.yml").write_text(
+        """page:
+  title: Hidden
+  path: /hidden/
+  layout: default
+sitemap:
+  enabled: false
+content:
+  - type: markdown
+    value: "# Hidden"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(site)]) == 0
+    assert main(["build", str(site)]) == 0
+    assert main(["package", "-o", str(archive_path), str(site)]) == 0
+
+    sitemap = (site / "public" / "sitemap.xml").read_text(encoding="utf-8")
+    assert "<loc>https://example.com/</loc>" in sitemap
+    assert "<loc>https://example.com/no-ads/</loc>" in sitemap
+    assert "https://example.com/hidden/" not in sitemap
+
+    robots = (site / "public" / "robots.txt").read_text(encoding="utf-8")
+    assert "Sitemap: https://example.com/sitemap.xml" in robots
+
+    index_html = (site / "public" / "index.html").read_text(encoding="utf-8")
+    no_ads_html = (site / "public" / "no-ads" / "index.html").read_text(
+        encoding="utf-8"
+    )
+    hidden_html = (site / "public" / "hidden" / "index.html").read_text(
+        encoding="utf-8"
+    )
+    assert ADSENSE_SCRIPT in index_html
+    assert ADSENSE_SCRIPT not in no_ads_html
+    assert ADSENSE_SCRIPT in hidden_html
+
+    names = zip_names(archive_path)
+    assert "sitemap.xml" in names
+    assert "robots.txt" in names
+    assert "index.html" in names
+    assert "no-ads/index.html" in names
+    assert "hidden/index.html" in names
+    assert "site.yml" not in names
+    assert not any(name.startswith("contents/") for name in names)
+    assert not any(name.startswith("templates/") for name in names)
+    assert not any(name.startswith("vendor/") for name in names)
+
+
 def test_cli_help_for_required_commands() -> None:
     help_commands = [
         ["init", "-h"],
         ["new", "page", "-h"],
+        ["new", "post", "-h"],
         ["validate", "-h"],
         ["build", "-h"],
         ["clean", "-h"],

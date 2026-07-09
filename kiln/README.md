@@ -40,6 +40,7 @@ kiln -h
 kiln init my-site
 cd my-site
 kiln new page about
+kiln new post hello-world
 kiln build
 kiln package
 kiln serve
@@ -76,6 +77,7 @@ Example:
 ```yaml
 site:
   title: Example Site
+  base_url: https://example.com
 build:
   output_dir: public
   content_dir: contents
@@ -84,6 +86,8 @@ build:
 assets:
   allowed_js_packages:
     - mathjax
+sitemap:
+  enabled: true
 ```
 
 Build directories must be relative paths inside the site root. Kiln rejects
@@ -107,6 +111,9 @@ content:
       # About
 
       This page is written in Markdown.
+sitemap:
+  changefreq: weekly
+  priority: 0.8
 ```
 
 Supported block types:
@@ -140,6 +147,66 @@ content:
 The `html` block may contain inline scripts or local script references, but
 Kiln rejects external `http://`, `https://`, and protocol-relative `//` script
 or stylesheet URLs.
+
+## Posts
+
+Create a post source file with:
+
+```sh
+kiln new post hello-world
+kiln new post notes/hello-world
+```
+
+Posts are ordinary pages with a top-level `post:` object. `kiln new post`
+creates files under `contents/posts/` and uses the `post` layout:
+
+```yaml
+page:
+  title: "Hello World"
+  path: "/posts/hello-world/"
+  layout: "post"
+post:
+  date: "2026-07-09"
+  draft: false
+  tags: []
+meta:
+  description: ""
+content:
+  - type: markdown
+    value: |
+      # Hello World
+```
+
+`post.date` is required and must use `YYYY-MM-DD`. `post.draft` is optional
+and defaults to `false`. `post.tags` is optional and defaults to `[]`; when
+present it must be a list of strings.
+
+Kiln exposes posts to all templates as `collections.posts`:
+
+```yaml
+collections:
+  posts:
+    - title: "Hello World"
+      path: "/posts/hello-world/"
+      url: "/posts/hello-world/"
+      date: "2026-07-09"
+      tags: []
+      draft: false
+      meta: {}
+```
+
+Draft posts are still built, but they are excluded from `collections.posts`.
+Posts are sorted newest first by `post.date`, then title ascending.
+
+A simple blog index template can render links to posts:
+
+```html
+<ul>
+{% for post in collections.posts %}
+  <li><a href="{{ post.url }}">{{ post.title }}</a> {{ post.date }}</li>
+{% endfor %}
+</ul>
+```
 
 ## Templates
 
@@ -179,6 +246,82 @@ static/css/site.css -> public/css/site.css
 ```
 
 Static files are copied as output assets. Kiln does not rewrite URLs.
+
+## Sitemap
+
+Kiln can generate `sitemap.xml` in the configured output directory:
+
+```yaml
+site:
+  title: Example Site
+  base_url: https://example.com
+sitemap:
+  enabled: true
+```
+
+`site.base_url` is required when sitemap generation is enabled and must be an
+absolute `http://` or `https://` URL. Kiln normalizes it by removing a trailing
+slash, so page path `/about/` becomes `https://example.com/about/`.
+
+Pages are included by default. Exclude a page with:
+
+```yaml
+sitemap:
+  enabled: false
+```
+
+Optional page sitemap metadata:
+
+```yaml
+sitemap:
+  enabled: true
+  changefreq: weekly
+  priority: 0.8
+```
+
+`changefreq` may be `always`, `hourly`, `daily`, `weekly`, `monthly`,
+`yearly`, or `never`. `priority` must be a number from `0.0` to `1.0`.
+Static files and vendored package assets are not included.
+
+## Robots
+
+Kiln can generate `robots.txt` in the configured output directory:
+
+```yaml
+site:
+  title: Example Site
+  base_url: https://example.com
+robots:
+  enabled: true
+  allow_all: true
+  sitemap: true
+```
+
+`robots.enabled` defaults to `false`. `robots.allow_all` defaults to `true`;
+when true, Kiln emits:
+
+```text
+User-agent: *
+Allow: /
+```
+
+Set `allow_all: false` to emit:
+
+```text
+User-agent: *
+Disallow: /
+```
+
+`robots.sitemap` defaults to `true` and appends:
+
+```text
+Sitemap: https://example.com/sitemap.xml
+```
+
+When `robots.sitemap` is true, `site.base_url` is required and must be an
+absolute `http://` or `https://` URL. This does not automatically enable
+sitemap generation, but most sites should enable both `robots.sitemap: true`
+and `sitemap.enabled: true`.
 
 ## No External CDN Policy
 
@@ -303,7 +446,8 @@ Static assets under `static_dir` are treated as trusted local project files.
 ## Build, Clean, Serve, Package
 
 `kiln build` validates the site, cleans the output directory by default, copies
-static assets and requested vendored packages, then renders pages.
+static assets and requested vendored packages, renders pages, and writes
+optional generated files such as `sitemap.xml` and `robots.txt`.
 
 ```sh
 kiln build

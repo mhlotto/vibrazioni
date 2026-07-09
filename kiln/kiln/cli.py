@@ -16,6 +16,7 @@ from .core import (
     init_site,
     load_site_config,
     new_page,
+    new_post,
     package_site,
     site_paths,
     validate_site,
@@ -93,6 +94,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_new_page = new_sub.add_parser("page", help="Create a new page.")
     p_new_page.add_argument("slug", help="Page slug, such as about or posts/hello-world.")
     p_new_page.add_argument("path", nargs="?", default=".", help="Site directory.")
+    p_new_post = new_sub.add_parser("post", help="Create a new post.")
+    p_new_post.add_argument("slug", help="Post slug, such as hello-world or notes/hello-world.")
+    p_new_post.add_argument("path", nargs="?", default=".", help="Site directory.")
 
     p_vendor = sub.add_parser("vendor", help="Install vendor packages into a site.")
     vendor_sub = p_vendor.add_subparsers(dest="vendor_package", required=True)
@@ -184,6 +188,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.command == "new":
             if args.new_command == "page":
                 page_file = new_page(path, args.slug)
+                print(f"Created {page_file}")
+                return 0
+            if args.new_command == "post":
+                page_file = new_post(path, args.slug)
                 print(f"Created {page_file}")
                 return 0
 

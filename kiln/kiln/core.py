@@ -6,12 +6,15 @@ import shutil
 import tarfile
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from dataclasses import dataclass
+from datetime import date
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, List, Optional, Set, Tuple
+from xml.sax.saxutils import escape as xml_escape
 
 import jinja2
 import markdown
@@ -22,6 +25,16 @@ from markupsafe import Markup
 KNOWN_BLOCK_TYPES = {"markdown", "html", "image", "code", "math"}
 SLUG_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*$")
 ADSENSE_CLIENT_RE = re.compile(r"^ca-pub-\d{10,30}$")
+ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+SITEMAP_CHANGEFREQ_VALUES = {
+    "always",
+    "hourly",
+    "daily",
+    "weekly",
+    "monthly",
+    "yearly",
+    "never",
+}
 
 
 class KilnError(Exception):
@@ -128,6 +141,9 @@ def init_site(path: Path) -> None:
     (path / "templates" / "default.html").write_text(
         STARTER_TEMPLATE_HTML, encoding="utf-8"
     )
+    (path / "templates" / "post.html").write_text(
+        STARTER_POST_TEMPLATE_HTML, encoding="utf-8"
+    )
     (path / "vendor" / "mathjax" / "README.md").write_text(
         MATHJAX_VENDOR_README, encoding="utf-8"
     )
@@ -176,10 +192,10 @@ def build_site(path: Path, clean: bool = True) -> List[BuildWarning]:
     copy_requested_packages(paths, pages)
 
     for page_source in pages:
-        html_text = render_page_html(paths, site, page_source)
+        html_text = render_page_html(paths, site, page_source, pages)
         policy_errors = find_asset_policy_errors(
             html_text,
-            allowed_external_script_urls=integration_allowed_script_urls(site),
+            allowed_external_script_urls=integration_allowed_script_urls(site, page_source.data),
         )
         if policy_errors:
             raise KilnError(
@@ -190,6 +206,9 @@ def build_site(path: Path, clean: bool = True) -> List[BuildWarning]:
         out_file = output_file_for_page(paths.output_dir, page["path"])
         out_file.parent.mkdir(parents=True, exist_ok=True)
         out_file.write_text(html_text, encoding="utf-8")
+
+    write_sitemap(paths, site, pages)
+    write_robots(paths, site)
 
     return warnings
 
@@ -226,6 +245,28 @@ def new_page(path: Path, slug: str) -> Path:
     page_path = path_for_slug(segments)
     page_file.parent.mkdir(parents=True, exist_ok=True)
     page_file.write_text(page_yaml(title, page_path), encoding="utf-8")
+    return page_file
+
+
+def new_post(path: Path, slug: str) -> Path:
+    segments = validate_page_slug(slug)
+    site, errors = load_site_config(path)
+    if errors:
+        raise KilnError("\n".join(errors))
+
+    paths = site_paths(path, site)
+    page_file = paths.content_dir.joinpath("posts", *segments).with_suffix(".yml")
+    resolved_file = page_file.resolve(strict=False)
+    resolved_content_dir = paths.content_dir.resolve(strict=False)
+    if not is_relative_to(resolved_file, resolved_content_dir):
+        raise KilnError(f"post file resolves outside content directory: {slug}")
+    if page_file.exists():
+        raise KilnError(f"post already exists: {page_file}")
+
+    title = title_for_slug(segments)
+    post_path = "/posts/" + "/".join(segments) + "/"
+    page_file.parent.mkdir(parents=True, exist_ok=True)
+    page_file.write_text(post_yaml(title, post_path, date.today().isoformat()), encoding="utf-8")
     return page_file
 
 
@@ -439,6 +480,13 @@ def load_pages(contents_dir: Path) -> List[PageSource]:
 
 def validate_site_config(site_root: Path, site: dict[str, Any]) -> List[str]:
     errors: List[str] = []
+    site_section = site.get("site", {})
+    if site_section is None:
+        site_section = {}
+    if not isinstance(site_section, dict):
+        errors.append(f"{site_root / 'site.yml'}: site must be a mapping")
+        site_section = {}
+
     assets = site.get("assets", {})
     if assets is None:
         assets = {}
@@ -464,6 +512,8 @@ def validate_site_config(site_root: Path, site: dict[str, Any]) -> List[str]:
             )
 
     errors.extend(validate_integrations_config(site_root, site))
+    errors.extend(validate_sitemap_config(site_root, site))
+    errors.extend(validate_robots_config(site_root, site))
 
     build = site.get("build", {})
     if build is None:
@@ -484,6 +534,60 @@ def validate_site_config(site_root: Path, site: dict[str, Any]) -> List[str]:
                     assert_safe_output_dir(site_root, configured_dir)
             except KilnError as err:
                 errors.append(f"{site_root / 'site.yml'}: build.{key}: {err}")
+
+    return errors
+
+
+def validate_sitemap_config(site_root: Path, site: dict[str, Any]) -> List[str]:
+    errors: List[str] = []
+    sitemap = site.get("sitemap", {})
+    if sitemap is None:
+        sitemap = {}
+    if not isinstance(sitemap, dict):
+        return [f"{site_root / 'site.yml'}: sitemap must be a mapping"]
+
+    enabled = sitemap.get("enabled", False)
+    if not isinstance(enabled, bool):
+        errors.append(f"{site_root / 'site.yml'}: sitemap.enabled must be a boolean")
+        enabled = False
+
+    if enabled:
+        base_url = site_base_url(site)
+        if not base_url:
+            errors.append(f"{site_root / 'site.yml'}: site.base_url is required when sitemap is enabled")
+        elif not is_absolute_http_url(base_url):
+            errors.append(f"{site_root / 'site.yml'}: site.base_url must be an absolute http:// or https:// URL")
+
+    return errors
+
+
+def validate_robots_config(site_root: Path, site: dict[str, Any]) -> List[str]:
+    errors: List[str] = []
+    robots = site.get("robots", {})
+    if robots is None:
+        robots = {}
+    if not isinstance(robots, dict):
+        return [f"{site_root / 'site.yml'}: robots must be a mapping"]
+
+    enabled = robots.get("enabled", False)
+    allow_all = robots.get("allow_all", True)
+    include_sitemap = robots.get("sitemap", True)
+
+    if not isinstance(enabled, bool):
+        errors.append(f"{site_root / 'site.yml'}: robots.enabled must be a boolean")
+        enabled = False
+    if not isinstance(allow_all, bool):
+        errors.append(f"{site_root / 'site.yml'}: robots.allow_all must be a boolean")
+    if not isinstance(include_sitemap, bool):
+        errors.append(f"{site_root / 'site.yml'}: robots.sitemap must be a boolean")
+        include_sitemap = False
+
+    if enabled and include_sitemap:
+        base_url = site_base_url(site)
+        if not base_url:
+            errors.append(f"{site_root / 'site.yml'}: site.base_url is required when robots.sitemap is true")
+        elif not is_absolute_http_url(base_url):
+            errors.append(f"{site_root / 'site.yml'}: site.base_url must be an absolute http:// or https:// URL")
 
     return errors
 
@@ -621,6 +725,46 @@ def package_script_tags(package_names: List[str]) -> str:
     return "\n".join(tags)
 
 
+def build_collections(pages: List[PageSource]) -> dict[str, Any]:
+    posts = []
+    for page_source in pages:
+        data = page_source.data
+        if not isinstance(data, dict):
+            continue
+        page = data.get("page")
+        post = data.get("post")
+        if not isinstance(page, dict) or not isinstance(post, dict):
+            continue
+        if post.get("draft", False):
+            continue
+        title = page.get("title")
+        path = page.get("path")
+        post_date = post.get("date")
+        tags = post.get("tags", [])
+        if not isinstance(title, str) or not isinstance(path, str) or not isinstance(post_date, str):
+            continue
+        if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
+            continue
+        posts.append(
+            {
+                "title": title,
+                "path": path,
+                "url": path,
+                "date": post_date,
+                "tags": tags,
+                "draft": False,
+                "meta": data.get("meta", {}),
+            }
+        )
+
+    posts.sort(key=lambda post: (-date_key(post["date"]), post["title"]))
+    return {"posts": posts}
+
+
+def date_key(value: str) -> int:
+    return int(value.replace("-", ""))
+
+
 def ads_integration_config(site: dict[str, Any]) -> Optional[dict[str, Any]]:
     integrations = site.get("integrations", {})
     if not isinstance(integrations, dict):
@@ -665,6 +809,114 @@ def integration_allowed_script_urls(
     parser = ScriptSrcParser()
     parser.feed(html_text)
     return parser.script_urls
+
+
+def sitemap_enabled(site: dict[str, Any]) -> bool:
+    sitemap = site.get("sitemap", {})
+    if not isinstance(sitemap, dict):
+        return False
+    return sitemap.get("enabled", False) is True
+
+
+def robots_enabled(site: dict[str, Any]) -> bool:
+    robots = site.get("robots", {})
+    if not isinstance(robots, dict):
+        return False
+    return robots.get("enabled", False) is True
+
+
+def site_base_url(site: dict[str, Any]) -> Optional[str]:
+    site_section = site.get("site", {})
+    if not isinstance(site_section, dict):
+        return None
+    base_url = site_section.get("base_url")
+    if not isinstance(base_url, str) or not base_url:
+        return None
+    return base_url.rstrip("/")
+
+
+def is_absolute_http_url(value: str) -> bool:
+    parsed = urllib.parse.urlparse(value)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def page_sitemap_config(page_data: dict[str, Any]) -> dict[str, Any]:
+    sitemap = page_data.get("sitemap", {})
+    return sitemap if isinstance(sitemap, dict) else {}
+
+
+def page_in_sitemap(page_data: dict[str, Any]) -> bool:
+    sitemap = page_sitemap_config(page_data)
+    enabled = sitemap.get("enabled")
+    if enabled is None:
+        return True
+    return bool(enabled)
+
+
+def format_sitemap_priority(value: Any) -> str:
+    return f"{value:g}"
+
+
+def write_sitemap(paths: SitePaths, site: dict[str, Any], pages: List[PageSource]) -> None:
+    if not sitemap_enabled(site):
+        return
+
+    base_url = site_base_url(site)
+    if not base_url:
+        raise KilnError("site.base_url is required when sitemap is enabled")
+
+    entries = []
+    for page_source in pages:
+        data = page_source.data
+        if not isinstance(data, dict) or not page_in_sitemap(data):
+            continue
+        page = data.get("page", {})
+        if not isinstance(page, dict) or not isinstance(page.get("path"), str):
+            continue
+        sitemap = page_sitemap_config(data)
+        entries.append((page["path"], sitemap))
+
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ]
+    for page_path, sitemap in sorted(entries, key=lambda item: item[0]):
+        lines.append("  <url>")
+        lines.append(f"    <loc>{xml_escape(base_url + page_path)}</loc>")
+        changefreq = sitemap.get("changefreq")
+        if changefreq is not None:
+            lines.append(f"    <changefreq>{xml_escape(str(changefreq))}</changefreq>")
+        priority = sitemap.get("priority")
+        if priority is not None:
+            lines.append(f"    <priority>{format_sitemap_priority(priority)}</priority>")
+        lines.append("  </url>")
+    lines.append("</urlset>")
+    lines.append("")
+
+    (paths.output_dir / "sitemap.xml").write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_robots(paths: SitePaths, site: dict[str, Any]) -> None:
+    if not robots_enabled(site):
+        return
+
+    robots = site.get("robots", {})
+    if not isinstance(robots, dict):
+        robots = {}
+
+    allow_all = robots.get("allow_all", True)
+    include_sitemap = robots.get("sitemap", True)
+    lines = ["User-agent: *"]
+    lines.append("Allow: /" if allow_all else "Disallow: /")
+
+    if include_sitemap:
+        base_url = site_base_url(site)
+        if not base_url:
+            raise KilnError("site.base_url is required when robots.sitemap is true")
+        lines.append(f"Sitemap: {base_url}/sitemap.xml")
+
+    lines.append("")
+    (paths.output_dir / "robots.txt").write_text("\n".join(lines), encoding="utf-8")
 
 
 class ScriptSrcParser(HTMLParser):
@@ -820,6 +1072,27 @@ content:
 """
 
 
+def post_yaml(title: str, page_path: str, post_date: str) -> str:
+    escaped_title = title.replace('"', '\\"')
+    escaped_path = page_path.replace('"', '\\"')
+    escaped_date = post_date.replace('"', '\\"')
+    return f"""page:
+  title: "{escaped_title}"
+  path: "{escaped_path}"
+  layout: "post"
+post:
+  date: "{escaped_date}"
+  draft: false
+  tags: []
+meta:
+  description: ""
+content:
+  - type: markdown
+    value: |
+      # {title}
+"""
+
+
 def load_yaml_file(path: Path) -> Any:
     try:
         return yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -884,6 +1157,40 @@ def validate_page(
         elif "enabled" in ads and not isinstance(ads["enabled"], bool):
             errors.append(f"{page_source.source_path}: ads.enabled must be a boolean")
 
+    post = data.get("post")
+    if post is not None:
+        if not isinstance(post, dict):
+            errors.append(f"{page_source.source_path}: post must be a mapping")
+        else:
+            post_date = post.get("date")
+            if not post_date:
+                errors.append(f"{page_source.source_path}: post.date is required")
+            elif not isinstance(post_date, str) or not ISO_DATE_RE.match(post_date):
+                errors.append(f"{page_source.source_path}: post.date must be an ISO date string: YYYY-MM-DD")
+            draft = post.get("draft", False)
+            if not isinstance(draft, bool):
+                errors.append(f"{page_source.source_path}: post.draft must be a boolean")
+            tags = post.get("tags", [])
+            if not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags):
+                errors.append(f"{page_source.source_path}: post.tags must be a list of strings")
+
+    sitemap = data.get("sitemap")
+    if sitemap is not None:
+        if not isinstance(sitemap, dict):
+            errors.append(f"{page_source.source_path}: sitemap must be a mapping")
+        else:
+            if "enabled" in sitemap and not isinstance(sitemap["enabled"], bool):
+                errors.append(f"{page_source.source_path}: sitemap.enabled must be a boolean")
+            changefreq = sitemap.get("changefreq")
+            if changefreq is not None and changefreq not in SITEMAP_CHANGEFREQ_VALUES:
+                errors.append(f"{page_source.source_path}: sitemap.changefreq is invalid: {changefreq}")
+            priority = sitemap.get("priority")
+            if priority is not None:
+                if isinstance(priority, bool) or not isinstance(priority, (int, float)):
+                    errors.append(f"{page_source.source_path}: sitemap.priority must be numeric")
+                elif priority < 0 or priority > 1:
+                    errors.append(f"{page_source.source_path}: sitemap.priority must be between 0.0 and 1.0")
+
     for index, block in enumerate(content):
         if not isinstance(block, dict):
             errors.append(f"{page_source.source_path}: content[{index}] must be a mapping")
@@ -946,7 +1253,7 @@ def validate_page(
             errors.append(f"{page_source.source_path}: template not found: {template_name}")
 
     if not errors:
-        html_text = render_page_html(paths, site, page_source)
+        html_text = render_page_html(paths, site, page_source, [page_source])
         errors.extend(
             f"{page_source.source_path}: {err}"
             for err in find_asset_policy_errors(
@@ -959,7 +1266,10 @@ def validate_page(
 
 
 def render_page_html(
-    paths: SitePaths, site: dict[str, Any], page_source: PageSource
+    paths: SitePaths,
+    site: dict[str, Any],
+    page_source: PageSource,
+    pages: Optional[List[PageSource]] = None,
 ) -> str:
     page = page_source.data["page"]
     layout = page["layout"]
@@ -976,11 +1286,14 @@ def render_page_html(
     rendered_blocks = render_blocks(page_source.data.get("content", []))
     scripts = package_script_tags(requested_packages(page_source.data))
     head_html = head_integrations_html(site, page_source.data)
+    collections = build_collections(pages or [page_source])
     html_text = template.render(
         site=site,
         page=page,
+        post=page_source.data.get("post", {}),
         meta=page_source.data.get("meta", {}),
         content=Markup("\n".join(rendered_blocks)),
+        collections=collections,
         packages=page_source.data.get("packages", []),
         package_scripts_html=Markup(scripts),
         head_integrations_html=Markup(head_html),
@@ -1111,6 +1424,27 @@ STARTER_TEMPLATE_HTML = """<!doctype html>
   <main>
     {{ content }}
   </main>
+  {{ package_scripts_html | safe }}
+</body>
+</html>
+"""
+
+
+STARTER_POST_TEMPLATE_HTML = """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page.title }} - {{ site.site.title }}</title>
+  {% if meta.description %}<meta name="description" content="{{ meta.description }}">{% endif %}
+  {{ head_integrations_html | safe }}
+</head>
+<body>
+  <article>
+    <h1>{{ page.title }}</h1>
+    {% if post.date %}<p><time datetime="{{ post.date }}">{{ post.date }}</time></p>{% endif %}
+    {{ content }}
+  </article>
   {{ package_scripts_html | safe }}
 </body>
 </html>
