@@ -271,6 +271,44 @@ template:
 integrations such as AdSense Auto ads. `package_scripts_html` contains local
 script tags for requested vendored packages such as MathJax.
 
+## URL Prefixes
+
+If a site is deployed under a subdirectory, include the path in
+`site.base_url`:
+
+```yaml
+site:
+  title: Amherst Area
+  base_url: "https://cw-complex.com/amherst-area"
+```
+
+Kiln exposes `site.base_path` to templates. For the example above it is
+`/amherst-area`; for `https://cw-complex.com` it is empty.
+
+Use the `url()` helper for internal links and assets:
+
+```html
+<a href="{{ url('/') }}">Home</a>
+<link rel="stylesheet" href="{{ url('/css/site.css') }}">
+<a href="{{ url('/restaurants/amherst/') }}">Restaurants</a>
+```
+
+This renders correctly both at the domain root and under a path prefix. Existing
+hardcoded root-relative links still render as written, but they may not work
+when deployed under a subdirectory.
+
+Markdown content may use normal root-relative links and images:
+
+```markdown
+[Amherst](/restaurants/amherst/)
+![Logo](/images/logo.png)
+```
+
+When `site.base_url` contains a path prefix, Kiln rewrites Markdown-generated
+internal `href` and `src` attributes automatically, for example to
+`/amherst-area/restaurants/amherst/`. External URLs, anchors, `mailto:`, and
+`tel:` links are left unchanged.
+
 ## Static Assets
 
 Files under the configured `static_dir` are copied into the configured
@@ -476,6 +514,9 @@ that request MathJax:
 ```html
 <script defer src="/vendor/mathjax/es5/tex-mml-chtml.js"></script>
 ```
+
+If `site.base_url` contains a path prefix, Kiln prefixes this local script URL
+the same way as `url('/vendor/mathjax/es5/tex-mml-chtml.js')`.
 
 For v0.1.0, Kiln rejects symlinks inside `vendor/mathjax/` during build.
 Static assets under `static_dir` are treated as trusted local project files.

@@ -16,6 +16,9 @@ from kiln.core import KilnError, download_vendor_package, validate_site
 
 
 MATHJAX_SCRIPT = '<script defer src="/vendor/mathjax/es5/tex-mml-chtml.js"></script>'
+PREFIXED_MATHJAX_SCRIPT = (
+    '<script defer src="/amherst-area/vendor/mathjax/es5/tex-mml-chtml.js"></script>'
+)
 ADSENSE_CLIENT = "ca-pub-1234567890123456"
 ADSENSE_URL = (
     "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"
@@ -997,6 +1000,264 @@ def test_build_copies_static_assets(tmp_path: Path) -> None:
     assert (tmp_path / "public" / "style.css").read_text(encoding="utf-8") == "body {}"
 
 
+def test_base_url_without_path_gives_empty_base_path(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        """site:
+  title: Test Site
+  base_url: "https://cw-complex.com"
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "templates" / "default.html").write_text(
+        "{{ site.base_path }}", encoding="utf-8"
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    assert (tmp_path / "public" / "index.html").read_text(encoding="utf-8") == ""
+
+
+def test_base_url_with_path_gives_base_path(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        """site:
+  title: Test Site
+  base_url: "https://cw-complex.com/amherst-area/"
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "templates" / "default.html").write_text(
+        "{{ site.base_path }}", encoding="utf-8"
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    assert (tmp_path / "public" / "index.html").read_text(encoding="utf-8") == "/amherst-area"
+
+
+def test_url_helper_root_with_base_path(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        """site:
+  title: Test Site
+  base_url: "https://cw-complex.com/amherst-area"
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "templates" / "default.html").write_text("{{ url('/') }}", encoding="utf-8")
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    assert (tmp_path / "public" / "index.html").read_text(encoding="utf-8") == "/amherst-area/"
+
+
+def test_url_helper_page_path_with_base_path(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        """site:
+  title: Test Site
+  base_url: "https://cw-complex.com/amherst-area"
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "templates" / "default.html").write_text(
+        "{{ url('/restaurants/amherst/') }}", encoding="utf-8"
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    assert (
+        tmp_path / "public" / "index.html"
+    ).read_text(encoding="utf-8") == "/amherst-area/restaurants/amherst/"
+
+
+def test_url_helper_asset_path_with_base_path(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        """site:
+  title: Test Site
+  base_url: "https://cw-complex.com/amherst-area"
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "templates" / "default.html").write_text(
+        "{{ url('css/site.css') }}", encoding="utf-8"
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    assert (tmp_path / "public" / "index.html").read_text(encoding="utf-8") == "/amherst-area/css/site.css"
+
+
+def test_url_helper_without_base_path(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "templates" / "default.html").write_text(
+        "{{ url('/') }}|{{ url('/restaurants/amherst/') }}|{{ url('css/site.css') }}",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    assert (
+        tmp_path / "public" / "index.html"
+    ).read_text(encoding="utf-8") == "/|/restaurants/amherst/|/css/site.css"
+
+
+def test_starter_template_can_use_url_helper_for_css_link(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        """site:
+  title: Test Site
+  base_url: "https://cw-complex.com/amherst-area"
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "templates" / "default.html").write_text(
+        '<link rel="stylesheet" href="{{ url("/css/site.css") }}">',
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    assert (
+        '<link rel="stylesheet" href="/amherst-area/css/site.css">'
+        in (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    )
+
+
+def markdown_link_site(root: Path, markdown_value: str, base_url: str = "https://cw-complex.com/amherst-area") -> None:
+    write_minimal_site(root)
+    (root / "site.yml").write_text(
+        f"""site:
+  title: Test Site
+  base_url: "{base_url}"
+""",
+        encoding="utf-8",
+    )
+    (root / "contents" / "index.yml").write_text(
+        f"""page:
+  title: Links
+  path: /
+  layout: default
+content:
+  - type: markdown
+    value: |
+      {markdown_value}
+""",
+        encoding="utf-8",
+    )
+
+
+def test_markdown_root_link_uses_base_path(tmp_path: Path) -> None:
+    markdown_link_site(tmp_path, "[Home](/)")
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert '<a href="/amherst-area/">Home</a>' in html
+
+
+def test_markdown_nested_link_uses_base_path(tmp_path: Path) -> None:
+    markdown_link_site(tmp_path, "[Amherst](/restaurants/amherst/)")
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert '<a href="/amherst-area/restaurants/amherst/">Amherst</a>' in html
+
+
+def test_markdown_image_src_uses_base_path(tmp_path: Path) -> None:
+    markdown_link_site(tmp_path, "![Alt](/images/foo.jpg)")
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert 'src="/amherst-area/images/foo.jpg"' in html
+
+
+def test_markdown_external_links_are_unchanged(tmp_path: Path) -> None:
+    markdown_link_site(tmp_path, "[HTTP](http://example.com/foo) [HTTPS](https://example.com/foo)")
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert 'href="http://example.com/foo"' in html
+    assert 'href="https://example.com/foo"' in html
+
+
+def test_markdown_protocol_relative_links_are_unchanged(tmp_path: Path) -> None:
+    markdown_link_site(tmp_path, "[Protocol](//example.com/foo)")
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert 'href="//example.com/foo"' in html
+
+
+def test_markdown_mailto_links_are_unchanged(tmp_path: Path) -> None:
+    markdown_link_site(tmp_path, "[Email](mailto:test@example.com)")
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert 'href="mailto:test@example.com"' in html
+
+
+def test_markdown_tel_links_are_unchanged(tmp_path: Path) -> None:
+    markdown_link_site(tmp_path, "[Call](tel:4135551212)")
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert 'href="tel:4135551212"' in html
+
+
+def test_markdown_anchor_links_are_unchanged(tmp_path: Path) -> None:
+    markdown_link_site(tmp_path, "[Section](#section)")
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert 'href="#section"' in html
+
+
+def test_markdown_already_prefixed_links_are_unchanged(tmp_path: Path) -> None:
+    markdown_link_site(tmp_path, "[Amherst](/amherst-area/restaurants/amherst/)")
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert html.count('/amherst-area/restaurants/amherst/') == 1
+
+
+def test_markdown_query_strings_are_preserved(tmp_path: Path) -> None:
+    markdown_link_site(tmp_path, "[Search](/restaurants/amherst/?x=1)")
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert 'href="/amherst-area/restaurants/amherst/?x=1"' in html
+
+
+def test_markdown_fragments_are_preserved(tmp_path: Path) -> None:
+    markdown_link_site(tmp_path, "[Top](/restaurants/amherst/#top)")
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert 'href="/amherst-area/restaurants/amherst/#top"' in html
+
+
+def test_markdown_links_unchanged_without_base_path(tmp_path: Path) -> None:
+    markdown_link_site(tmp_path, "[Amherst](/restaurants/amherst/)", base_url="https://cw-complex.com")
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert '<a href="/restaurants/amherst/">Amherst</a>' in html
+
+
 def test_collections_posts_includes_non_draft_posts(tmp_path: Path) -> None:
     write_minimal_site(tmp_path)
     write_post(tmp_path, "posts/hello.yml", "Hello", "/posts/hello/", "2026-07-09")
@@ -1252,6 +1513,22 @@ def test_sitemap_invalid_base_url_fails_validation(tmp_path: Path) -> None:
     assert main(["validate", str(tmp_path)]) == 1
 
 
+def test_base_url_with_query_or_fragment_fails_validation(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    for base_url in (
+        "https://cw-complex.com/amherst-area?preview=true",
+        "https://cw-complex.com/amherst-area#top",
+    ):
+        (tmp_path / "site.yml").write_text(
+            f"""site:
+  title: Test Site
+  base_url: "{base_url}"
+""",
+            encoding="utf-8",
+        )
+        assert main(["validate", str(tmp_path)]) == 1
+
+
 def test_sitemap_generates_output_file_with_root_url(tmp_path: Path) -> None:
     write_minimal_site(tmp_path)
     enable_sitemap(tmp_path, base_url="https://example.com/")
@@ -1260,6 +1537,17 @@ def test_sitemap_generates_output_file_with_root_url(tmp_path: Path) -> None:
 
     xml = (tmp_path / "public" / "sitemap.xml").read_text(encoding="utf-8")
     assert "<loc>https://example.com/</loc>" in xml
+
+
+def test_sitemap_loc_includes_base_url_path(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_sitemap(tmp_path, base_url="https://cw-complex.com/amherst-area")
+    assert main(["new", "page", "restaurants/amherst", str(tmp_path)]) == 0
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    xml = (tmp_path / "public" / "sitemap.xml").read_text(encoding="utf-8")
+    assert "<loc>https://cw-complex.com/amherst-area/restaurants/amherst/</loc>" in xml
 
 
 def test_sitemap_nested_page_url_is_correct(tmp_path: Path) -> None:
@@ -1594,6 +1882,16 @@ def test_robots_sitemap_true_emits_sitemap_line(tmp_path: Path) -> None:
     assert "Sitemap: https://example.com/sitemap.xml" in text
 
 
+def test_robots_sitemap_line_includes_base_url_path(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_robots(tmp_path, base_url="https://cw-complex.com/amherst-area/")
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    text = (tmp_path / "public" / "robots.txt").read_text(encoding="utf-8")
+    assert "Sitemap: https://cw-complex.com/amherst-area/sitemap.xml" in text
+
+
 def test_robots_sitemap_true_requires_valid_base_url(tmp_path: Path) -> None:
     write_minimal_site(tmp_path)
     enable_robots(tmp_path, base_url="")
@@ -1685,6 +1983,55 @@ def test_build_emits_local_mathjax_script_tag(tmp_path: Path) -> None:
     assert "https://" not in html
     assert "http://" not in html
     assert 'src="//' not in html
+
+
+def test_mathjax_local_script_uses_base_path(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        """site:
+  title: Test Site
+  base_url: "https://cw-complex.com/amherst-area"
+assets:
+  allowed_js_packages:
+    - mathjax
+""",
+        encoding="utf-8",
+    )
+    request_mathjax(tmp_path)
+    write_mathjax_entrypoint(tmp_path)
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert PREFIXED_MATHJAX_SCRIPT in html
+    assert MATHJAX_SCRIPT not in html
+
+
+def test_external_adsense_url_is_unchanged_by_base_path(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        f"""site:
+  title: Test Site
+  base_url: "https://cw-complex.com/amherst-area"
+integrations:
+  ads:
+    provider: adsense
+    enabled: true
+    mode: auto
+    client: {ADSENSE_CLIENT}
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "templates" / "default.html").write_text(
+        "<html><head>{{ head_integrations_html | safe }}</head><body>{{ content }}</body></html>",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert ADSENSE_SCRIPT in html
+    assert "/amherst-area/pagead2.googlesyndication.com" not in html
 
 
 def test_duplicate_mathjax_packages_emit_one_script_tag(tmp_path: Path) -> None:

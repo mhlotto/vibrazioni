@@ -95,7 +95,7 @@ PACKAGE_REGISTRY = {
         vendor_dir=Path("vendor/mathjax"),
         entrypoint=Path("vendor/mathjax/es5/tex-mml-chtml.js"),
         output_dir=Path("vendor/mathjax"),
-        script_tag='<script defer src="/vendor/mathjax/es5/tex-mml-chtml.js"></script>',
+        script_tag='<script defer src="{base_path}/vendor/mathjax/es5/tex-mml-chtml.js"></script>',
     )
 }
 
@@ -500,6 +500,12 @@ def validate_site_config(site_root: Path, site: dict[str, Any]) -> List[str]:
     if not isinstance(site_section, dict):
         errors.append(f"{site_root / 'site.yml'}: site must be a mapping")
         site_section = {}
+    base_url = site_section.get("base_url")
+    if base_url is not None:
+        if not isinstance(base_url, str) or not is_absolute_http_url(base_url):
+            errors.append(f"{site_root / 'site.yml'}: site.base_url must be an absolute http:// or https:// URL")
+        elif urllib.parse.urlparse(base_url).query or urllib.parse.urlparse(base_url).fragment:
+            errors.append(f"{site_root / 'site.yml'}: site.base_url must not include query strings or fragments")
 
     assets = site.get("assets", {})
     if assets is None:
@@ -728,14 +734,14 @@ def requested_packages(page_data: dict[str, Any]) -> List[str]:
     return [package for package in packages if isinstance(package, str)]
 
 
-def package_script_tags(package_names: List[str]) -> str:
+def package_script_tags(package_names: List[str], base_path: str = "") -> str:
     seen = set()
     tags = []
     for package_name in package_names:
         if package_name in seen:
             continue
         seen.add(package_name)
-        tags.append(PACKAGE_REGISTRY[package_name].script_tag)
+        tags.append(PACKAGE_REGISTRY[package_name].script_tag.format(base_path=base_path))
     return "\n".join(tags)
 
 
@@ -860,6 +866,31 @@ def site_base_url(site: dict[str, Any]) -> Optional[str]:
 def is_absolute_http_url(value: str) -> bool:
     parsed = urllib.parse.urlparse(value)
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def site_base_path(site: dict[str, Any]) -> str:
+    base_url = site_base_url(site)
+    if not base_url:
+        return ""
+    path = urllib.parse.urlparse(base_url).path.rstrip("/")
+    return "" if path == "/" else path
+
+
+def url_for(site: dict[str, Any], path: str) -> str:
+    base_path = site_base_path(site)
+    if not path:
+        path = "/"
+    if not path.startswith("/"):
+        path = "/" + path
+    if path == "/":
+        return base_path + "/" if base_path else "/"
+    return base_path + path
+
+
+def template_site(site: dict[str, Any]) -> dict[str, Any]:
+    context_site = dict(site)
+    context_site["base_path"] = site_base_path(site)
+    return context_site
 
 
 def page_sitemap_config(page_data: dict[str, Any]) -> dict[str, Any]:
@@ -1305,13 +1336,16 @@ def render_page_html(
     except jinja2.TemplateNotFound as err:
         raise KilnError(f"{page_source.source_path}: template not found: {template_name}") from err
 
-    rendered_blocks = render_blocks(page_source.data.get("content", []))
+    rendered_blocks = render_blocks(page_source.data.get("content", []), site)
     content_html = Markup("\n".join(rendered_blocks))
-    scripts = package_script_tags(requested_packages(page_source.data))
+    scripts = package_script_tags(
+        requested_packages(page_source.data),
+        base_path=site_base_path(site),
+    )
     head_html = head_integrations_html(site, page_source.data)
     collections = build_collections(pages or [page_source])
     html_text = template.render(
-        site=site,
+        site=template_site(site),
         page=page,
         post=page_source.data.get("post", {}),
         meta=page_source.data.get("meta", {}),
@@ -1319,6 +1353,7 @@ def render_page_html(
         content_html=content_html,
         data=custom_page_data(page_source.data),
         collections=collections,
+        url=lambda path: url_for(site, str(path)),
         packages=page_source.data.get("packages", []),
         package_scripts_html=Markup(scripts),
         head_integrations_html=Markup(head_html),
@@ -1337,12 +1372,14 @@ def render_page_html(
     return html_text
 
 
-def render_blocks(blocks: List[dict[str, Any]]) -> List[str]:
+def render_blocks(blocks: List[dict[str, Any]], site: Optional[dict[str, Any]] = None) -> List[str]:
     rendered = []
+    site = site or {}
     for block in blocks:
         block_type = block["type"]
         if block_type == "markdown":
-            rendered.append(markdown.markdown(str(block.get("value", ""))))
+            html_text = markdown.markdown(str(block.get("value", "")))
+            rendered.append(rewrite_markdown_links(html_text, site))
         elif block_type == "html":
             rendered.append(str(block.get("value", "")))
         elif block_type == "image":
@@ -1358,6 +1395,86 @@ def render_blocks(blocks: List[dict[str, Any]]) -> List[str]:
             expression = html.escape(str(block.get("value", "")))
             rendered.append(f'<div class="math">{expression}</div>')
     return rendered
+
+
+def rewrite_markdown_links(html_text: str, site: dict[str, Any]) -> str:
+    base_path = site_base_path(site)
+    if not base_path:
+        return html_text
+    parser = MarkdownLinkRewriter(site)
+    parser.feed(html_text)
+    parser.close()
+    return parser.html()
+
+
+class MarkdownLinkRewriter(HTMLParser):
+    def __init__(self, site: dict[str, Any]) -> None:
+        super().__init__(convert_charrefs=False)
+        self.site = site
+        self.parts: List[str] = []
+
+    def handle_starttag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]) -> None:
+        self.parts.append(self.format_tag(tag, attrs, closed=False))
+
+    def handle_startendtag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]) -> None:
+        self.parts.append(self.format_tag(tag, attrs, closed=True))
+
+    def handle_endtag(self, tag: str) -> None:
+        self.parts.append(f"</{tag}>")
+
+    def handle_data(self, data: str) -> None:
+        self.parts.append(data)
+
+    def handle_entityref(self, name: str) -> None:
+        self.parts.append(f"&{name};")
+
+    def handle_charref(self, name: str) -> None:
+        self.parts.append(f"&#{name};")
+
+    def html(self) -> str:
+        return "".join(self.parts)
+
+    def format_tag(
+        self,
+        tag: str,
+        attrs: List[Tuple[str, Optional[str]]],
+        closed: bool,
+    ) -> str:
+        rewritten = []
+        for name, value in attrs:
+            if name in {"href", "src"} and value is not None:
+                value = rewrite_internal_url(value, self.site)
+            rewritten.append((name, value))
+        attr_text = "".join(
+            f" {name}" if value is None else f' {name}="{html.escape(value, quote=True)}"'
+            for name, value in rewritten
+        )
+        suffix = " /" if closed else ""
+        return f"<{tag}{attr_text}{suffix}>"
+
+
+def rewrite_internal_url(value: str, site: dict[str, Any]) -> str:
+    if not should_rewrite_internal_url(value, site_base_path(site)):
+        return value
+    return url_for(site, value)
+
+
+def should_rewrite_internal_url(value: str, base_path: str) -> bool:
+    if not base_path or not value:
+        return False
+    lowered = value.lower()
+    if (
+        lowered.startswith("http://")
+        or lowered.startswith("https://")
+        or lowered.startswith("//")
+        or lowered.startswith("#")
+        or lowered.startswith("mailto:")
+        or lowered.startswith("tel:")
+    ):
+        return False
+    if not value.startswith("/"):
+        return False
+    return value == "/" or not (value == base_path or value.startswith(base_path + "/"))
 
 
 def copy_static(static_dir: Path, public_dir: Path) -> None:
