@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import json
 import re
 import shutil
 import tarfile
@@ -532,6 +533,7 @@ def validate_site_config(site_root: Path, site: dict[str, Any]) -> List[str]:
             )
 
     errors.extend(validate_integrations_config(site_root, site))
+    errors.extend(validate_structured_data_config(site_root, site))
     errors.extend(validate_sitemap_config(site_root, site))
     errors.extend(validate_robots_config(site_root, site))
 
@@ -554,6 +556,54 @@ def validate_site_config(site_root: Path, site: dict[str, Any]) -> List[str]:
                     assert_safe_output_dir(site_root, configured_dir)
             except KilnError as err:
                 errors.append(f"{site_root / 'site.yml'}: build.{key}: {err}")
+
+    return errors
+
+
+def validate_structured_data_config(site_root: Path, site: dict[str, Any]) -> List[str]:
+    errors: List[str] = []
+    config = site.get("structured_data", {})
+    if config is None:
+        config = {}
+    if not isinstance(config, dict):
+        return [f"{site_root / 'site.yml'}: structured_data must be a mapping"]
+
+    enabled = config.get("enabled", False)
+    if not isinstance(enabled, bool):
+        errors.append(f"{site_root / 'site.yml'}: structured_data.enabled must be a boolean")
+        enabled = False
+
+    if enabled and not site_base_url(site):
+        errors.append(f"{site_root / 'site.yml'}: site.base_url is required when structured_data is enabled")
+
+    website = config.get("website")
+    if website is not None:
+        if not isinstance(website, dict):
+            errors.append(f"{site_root / 'site.yml'}: structured_data.website must be a mapping")
+        else:
+            unknown = set(website) - {"name"}
+            for key in sorted(unknown):
+                errors.append(f"{site_root / 'site.yml'}: unknown structured_data.website field: {key}")
+            if "name" in website and not isinstance(website["name"], str):
+                errors.append(f"{site_root / 'site.yml'}: structured_data.website.name must be a string")
+
+    organization = config.get("organization")
+    if organization is not None:
+        if not isinstance(organization, dict):
+            errors.append(f"{site_root / 'site.yml'}: structured_data.organization must be a mapping")
+        else:
+            unknown = set(organization) - {"name", "url", "logo"}
+            for key in sorted(unknown):
+                errors.append(f"{site_root / 'site.yml'}: unknown structured_data.organization field: {key}")
+            name = organization.get("name")
+            if not isinstance(name, str) or not name:
+                errors.append(f"{site_root / 'site.yml'}: structured_data.organization.name is required")
+            for key in ("url", "logo"):
+                value = organization.get(key)
+                if value is not None and (not isinstance(value, str) or not is_absolute_http_url(value)):
+                    errors.append(
+                        f"{site_root / 'site.yml'}: structured_data.organization.{key} must be an absolute http:// or https:// URL"
+                    )
 
     return errors
 
@@ -837,6 +887,86 @@ def integration_allowed_script_urls(
     parser = ScriptSrcParser()
     parser.feed(html_text)
     return parser.script_urls
+
+
+def structured_data_enabled(site: dict[str, Any]) -> bool:
+    config = site.get("structured_data", {})
+    if not isinstance(config, dict):
+        return False
+    return config.get("enabled", False) is True
+
+
+def structured_data_html(site: dict[str, Any], page_data: dict[str, Any]) -> str:
+    if not structured_data_enabled(site):
+        return ""
+    graph = structured_data_graph(site, page_data)
+    json_text = json.dumps(graph, ensure_ascii=False, separators=(",", ":"))
+    json_text = json_text.replace("</", "<\\/")
+    return f'<script type="application/ld+json">{json_text}</script>'
+
+
+def structured_data_graph(site: dict[str, Any], page_data: dict[str, Any]) -> dict[str, Any]:
+    base_url = site_base_url(site)
+    if not base_url:
+        raise KilnError("site.base_url is required when structured_data is enabled")
+
+    config = site.get("structured_data", {})
+    if not isinstance(config, dict):
+        config = {}
+    website_config = config.get("website", {})
+    if not isinstance(website_config, dict):
+        website_config = {}
+    organization_config = config.get("organization")
+    site_section = site.get("site", {})
+    if not isinstance(site_section, dict):
+        site_section = {}
+
+    website = {
+        "@type": "WebSite",
+        "@id": f"{base_url}#website",
+        "url": f"{base_url}/",
+        "name": website_config.get("name") or site_section.get("title", ""),
+    }
+    graph: List[dict[str, Any]] = [website]
+
+    has_organization = isinstance(organization_config, dict)
+    if has_organization:
+        organization = {
+            "@type": "Organization",
+            "@id": f"{base_url}#organization",
+            "name": organization_config.get("name", ""),
+        }
+        if organization_config.get("url"):
+            organization["url"] = organization_config["url"]
+        if organization_config.get("logo"):
+            organization["logo"] = organization_config["logo"]
+        graph.append(organization)
+
+    page = page_data.get("page", {})
+    if not isinstance(page, dict):
+        page = {}
+    meta = page_data.get("meta", {})
+    if not isinstance(meta, dict):
+        meta = {}
+    page_config = page_data.get("structured_data", {})
+    if not isinstance(page_config, dict):
+        page_config = {}
+
+    page_path = page.get("path", "/")
+    page_url = f"{base_url}{page_path}"
+    webpage = {
+        "@type": page_config.get("type", "WebPage"),
+        "@id": f"{page_url}#webpage",
+        "url": page_url,
+        "name": page_config.get("name") or page.get("title", ""),
+        "description": page_config.get("description", meta.get("description", "")),
+        "isPartOf": {"@id": f"{base_url}#website"},
+    }
+    if has_organization:
+        webpage["publisher"] = {"@id": f"{base_url}#organization"}
+    graph.append(webpage)
+
+    return {"@context": "https://schema.org", "@graph": graph}
 
 
 def sitemap_enabled(site: dict[str, Any]) -> bool:
@@ -1244,6 +1374,22 @@ def validate_page(
                 elif priority < 0 or priority > 1:
                     errors.append(f"{page_source.source_path}: sitemap.priority must be between 0.0 and 1.0")
 
+    page_structured_data = data.get("structured_data")
+    if page_structured_data is not None:
+        if not isinstance(page_structured_data, dict):
+            errors.append(f"{page_source.source_path}: structured_data must be a mapping")
+        else:
+            unknown = set(page_structured_data) - {"type", "name", "description"}
+            for key in sorted(unknown):
+                errors.append(f"{page_source.source_path}: unknown structured_data field: {key}")
+            schema_type = page_structured_data.get("type", "WebPage")
+            if schema_type != "WebPage":
+                errors.append(f"{page_source.source_path}: structured_data.type must be WebPage")
+            for key in ("name", "description"):
+                value = page_structured_data.get(key)
+                if value is not None and not isinstance(value, str):
+                    errors.append(f"{page_source.source_path}: structured_data.{key} must be a string")
+
     for index, block in enumerate(content):
         if not isinstance(block, dict):
             errors.append(f"{page_source.source_path}: content[{index}] must be a mapping")
@@ -1343,6 +1489,7 @@ def render_page_html(
         base_path=site_base_path(site),
     )
     head_html = head_integrations_html(site, page_source.data)
+    schema_html = structured_data_html(site, page_source.data)
     collections = build_collections(pages or [page_source])
     html_text = template.render(
         site=template_site(site),
@@ -1357,6 +1504,7 @@ def render_page_html(
         packages=page_source.data.get("packages", []),
         package_scripts_html=Markup(scripts),
         head_integrations_html=Markup(head_html),
+        structured_data_html=Markup(schema_html),
     )
     if head_html and head_html not in html_text:
         head_index = html_text.lower().find("</head>")
@@ -1364,6 +1512,12 @@ def render_page_html(
             html_text = html_text[:head_index] + head_html + "\n" + html_text[head_index:]
         else:
             html_text = head_html + "\n" + html_text
+    if schema_html and schema_html not in html_text:
+        head_index = html_text.lower().find("</head>")
+        if head_index >= 0:
+            html_text = html_text[:head_index] + schema_html + "\n" + html_text[head_index:]
+        else:
+            html_text = schema_html + "\n" + html_text
     if scripts and scripts not in html_text:
         body_index = html_text.lower().rfind("</body>")
         if body_index >= 0:
@@ -1561,6 +1715,7 @@ STARTER_TEMPLATE_HTML = """<!doctype html>
   <title>{{ page.title }} - {{ site.site.title }}</title>
   {% if meta.description %}<meta name="description" content="{{ meta.description }}">{% endif %}
   {{ head_integrations_html | safe }}
+  {{ structured_data_html | safe }}
 </head>
 <body>
   <main>
@@ -1580,6 +1735,7 @@ STARTER_POST_TEMPLATE_HTML = """<!doctype html>
   <title>{{ page.title }} - {{ site.site.title }}</title>
   {% if meta.description %}<meta name="description" content="{{ meta.description }}">{% endif %}
   {{ head_integrations_html | safe }}
+  {{ structured_data_html | safe }}
 </head>
 <body>
   <article>

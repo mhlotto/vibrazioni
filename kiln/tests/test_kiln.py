@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import errno
 import io
+import json
 import shutil
 import tarfile
 import zipfile
@@ -110,6 +111,35 @@ def enable_robots(
 """,
         encoding="utf-8",
     )
+
+
+def enable_structured_data(root: Path, organization: bool = False) -> None:
+    organization_yaml = ""
+    if organization:
+        organization_yaml = """  organization:
+    name: "CW Complex"
+    url: "https://cw-complex.com"
+    logo: "https://cw-complex.com/images/logo.png"
+"""
+    (root / "site.yml").write_text(
+        f"""site:
+  title: Test Site
+  base_url: "https://example.com"
+structured_data:
+  enabled: true
+  website:
+    name: "My Site"
+{organization_yaml}""",
+        encoding="utf-8",
+    )
+
+
+def json_ld_graph(html: str) -> dict:
+    start = html.index('<script type="application/ld+json">') + len(
+        '<script type="application/ld+json">'
+    )
+    end = html.index("</script>", start)
+    return json.loads(html[start:end].replace("<\\/", "</"))
 
 
 def write_mathjax_entrypoint(root: Path) -> None:
@@ -579,6 +609,442 @@ def test_adsense_does_not_duplicate_template_variable_output(tmp_path: Path) -> 
 
     html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
     assert html.count(ADSENSE_SCRIPT) == 1
+
+
+def test_structured_data_disabled_by_default_emits_no_json_ld(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert 'application/ld+json' not in html
+
+
+def test_structured_data_enabled_must_be_boolean(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        """site:
+  title: Test Site
+  base_url: "https://example.com"
+structured_data:
+  enabled: yes please
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_structured_data_enabled_requires_base_url(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        """site:
+  title: Test Site
+structured_data:
+  enabled: true
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_structured_data_website_mapping_validation(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        """site:
+  title: Test Site
+  base_url: "https://example.com"
+structured_data:
+  enabled: true
+  website: nope
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_structured_data_website_name_defaults_to_site_title(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        """site:
+  title: Test Site
+  base_url: "https://example.com"
+structured_data:
+  enabled: true
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    graph = json_ld_graph((tmp_path / "public" / "index.html").read_text(encoding="utf-8"))
+    assert graph["@graph"][0]["name"] == "Test Site"
+
+
+def test_structured_data_unknown_website_fields_fail_validation(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        """site:
+  title: Test Site
+  base_url: "https://example.com"
+structured_data:
+  enabled: true
+  website:
+    search: true
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_structured_data_organization_mapping_validation(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        """site:
+  title: Test Site
+  base_url: "https://example.com"
+structured_data:
+  enabled: true
+  organization: nope
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_structured_data_organization_name_required(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        """site:
+  title: Test Site
+  base_url: "https://example.com"
+structured_data:
+  enabled: true
+  organization:
+    url: "https://example.com"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_structured_data_organization_url_logo_must_be_absolute(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    for key in ("url", "logo"):
+        (tmp_path / "site.yml").write_text(
+            f"""site:
+  title: Test Site
+  base_url: "https://example.com"
+structured_data:
+  enabled: true
+  organization:
+    name: "Org"
+    {key}: "/local"
+""",
+            encoding="utf-8",
+        )
+        assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_structured_data_unknown_organization_fields_fail_validation(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        """site:
+  title: Test Site
+  base_url: "https://example.com"
+structured_data:
+  enabled: true
+  organization:
+    name: "Org"
+    sameAs: []
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_page_structured_data_must_be_mapping(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_structured_data(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Home
+  path: /
+  layout: default
+structured_data: nope
+content:
+  - type: markdown
+    value: "# Hello"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_page_structured_data_type_defaults_to_webpage(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_structured_data(tmp_path)
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    graph = json_ld_graph((tmp_path / "public" / "index.html").read_text(encoding="utf-8"))
+    assert graph["@graph"][-1]["@type"] == "WebPage"
+
+
+def test_invalid_page_structured_data_type_fails_validation(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_structured_data(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Home
+  path: /
+  layout: default
+structured_data:
+  type: Article
+content:
+  - type: markdown
+    value: "# Hello"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_page_structured_data_name_defaults_to_page_title(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_structured_data(tmp_path)
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    graph = json_ld_graph((tmp_path / "public" / "index.html").read_text(encoding="utf-8"))
+    assert graph["@graph"][-1]["name"] == "Home"
+
+
+def test_page_structured_data_description_defaults_to_meta_description(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_structured_data(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Home
+  path: /
+  layout: default
+meta:
+  description: "Meta description"
+content:
+  - type: markdown
+    value: "# Hello"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    graph = json_ld_graph((tmp_path / "public" / "index.html").read_text(encoding="utf-8"))
+    assert graph["@graph"][-1]["description"] == "Meta description"
+
+
+def test_unknown_page_structured_data_fields_fail_validation(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_structured_data(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Home
+  path: /
+  layout: default
+structured_data:
+  extra: true
+content:
+  - type: markdown
+    value: "# Hello"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_generated_json_ld_parses_and_includes_website_webpage(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_structured_data(tmp_path)
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    graph = json_ld_graph((tmp_path / "public" / "index.html").read_text(encoding="utf-8"))
+    assert graph["@context"] == "https://schema.org"
+    assert [item["@type"] for item in graph["@graph"]] == ["WebSite", "WebPage"]
+
+
+def test_generated_graph_includes_organization_only_when_configured(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_structured_data(tmp_path, organization=True)
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    graph = json_ld_graph((tmp_path / "public" / "index.html").read_text(encoding="utf-8"))
+    types = [item["@type"] for item in graph["@graph"]]
+    assert types == ["WebSite", "Organization", "WebPage"]
+    assert graph["@graph"][-1]["publisher"] == {"@id": "https://example.com#organization"}
+
+
+def test_webpage_url_uses_base_url_and_page_path(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_structured_data(tmp_path)
+    assert main(["new", "page", "about", str(tmp_path)]) == 0
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    graph = json_ld_graph((tmp_path / "public" / "about" / "index.html").read_text(encoding="utf-8"))
+    assert graph["@graph"][-1]["url"] == "https://example.com/about/"
+
+
+def test_webpage_url_uses_base_url_path_prefix(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        """site:
+  title: Test Site
+  base_url: "https://cw-complex.com/amherst-area"
+structured_data:
+  enabled: true
+""",
+        encoding="utf-8",
+    )
+    assert main(["new", "page", "restaurants/amherst", str(tmp_path)]) == 0
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    graph = json_ld_graph(
+        (tmp_path / "public" / "restaurants" / "amherst" / "index.html").read_text(encoding="utf-8")
+    )
+    assert graph["@graph"][-1]["url"] == "https://cw-complex.com/amherst-area/restaurants/amherst/"
+
+
+def test_structured_data_root_page_url_is_correct(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_structured_data(tmp_path)
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    graph = json_ld_graph((tmp_path / "public" / "index.html").read_text(encoding="utf-8"))
+    assert graph["@graph"][-1]["url"] == "https://example.com/"
+
+
+def test_json_ld_appears_in_head(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_structured_data(tmp_path)
+    (tmp_path / "templates" / "default.html").write_text(
+        "<html><head>{{ structured_data_html | safe }}</head><body>{{ content }}</body></html>",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert html.index('type="application/ld+json"') < html.index("</head>")
+
+
+def test_structured_data_fallback_injects_into_older_template(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_structured_data(tmp_path)
+    (tmp_path / "templates" / "default.html").write_text(
+        "<html><head><title>{{ page.title }}</title></head><body>{{ content }}</body></html>",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert html.count('type="application/ld+json"') == 1
+    assert html.index('type="application/ld+json"') < html.index("</head>")
+
+
+def test_structured_data_template_variable_does_not_duplicate(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_structured_data(tmp_path)
+    (tmp_path / "templates" / "default.html").write_text(
+        "<html><head>{{ structured_data_html | safe }}</head><body>{{ content }}</body></html>",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert html.count('type="application/ld+json"') == 1
+
+
+def test_json_ld_escaping_prevents_literal_script_close(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_structured_data(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Home
+  path: /
+  layout: default
+structured_data:
+  description: "</script><p>bad</p>"
+content:
+  - type: markdown
+    value: "# Hello"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    script_body = html.split('<script type="application/ld+json">', 1)[1].split("</script>", 1)[0]
+    assert "</script>" not in script_body
+    assert "<\\/script>" in script_body
+
+
+def test_structured_data_coexists_with_adsense_external_script(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        f"""site:
+  title: Test Site
+  base_url: "https://example.com"
+structured_data:
+  enabled: true
+integrations:
+  ads:
+    provider: adsense
+    enabled: true
+    mode: auto
+    client: {ADSENSE_CLIENT}
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert ADSENSE_SCRIPT in html
+    assert 'type="application/ld+json"' in html
+
+
+def test_structured_data_does_not_allow_arbitrary_external_scripts(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_structured_data(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Home
+  path: /
+  layout: default
+content:
+  - type: html
+    value: '<script src="https://example.com/app.js"></script>'
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 1
 
 
 def test_validate_catches_protocol_relative_script_urls(tmp_path: Path) -> None:

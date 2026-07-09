@@ -257,6 +257,7 @@ template:
   <meta charset="utf-8">
   <title>{{ page.title }} - {{ site.site.title }}</title>
   {{ head_integrations_html | safe }}
+  {{ structured_data_html | safe }}
 </head>
 <body>
   <main>
@@ -268,8 +269,10 @@ template:
 ```
 
 `head_integrations_html` contains validated head scripts for enabled
-integrations such as AdSense Auto ads. `package_scripts_html` contains local
-script tags for requested vendored packages such as MathJax.
+integrations such as AdSense Auto ads. `structured_data_html` contains
+generated schema.org JSON-LD when structured data is enabled.
+`package_scripts_html` contains local script tags for requested vendored
+packages such as MathJax.
 
 ## URL Prefixes
 
@@ -397,6 +400,43 @@ When `robots.sitemap` is true, `site.base_url` is required and must be an
 absolute `http://` or `https://` URL. This does not automatically enable
 sitemap generation, but most sites should enable both `robots.sitemap: true`
 and `sitemap.enabled: true`.
+
+## Structured Data
+
+Kiln can emit schema.org JSON-LD into each generated page `<head>`. It is
+disabled by default and requires `site.base_url` when enabled:
+
+```yaml
+site:
+  title: "Amherst Area Directory"
+  base_url: "https://cw-complex.com/amherst-area"
+
+structured_data:
+  enabled: true
+  website:
+    name: "Amherst Area Directory"
+  organization:
+    name: "CW Complex"
+    url: "https://cw-complex.com"
+```
+
+The first pass generates `WebSite` and `WebPage` schema. `Organization` is
+included only when configured. `website.name` is optional and defaults to
+`site.title`. Organization `name` is required when the organization block is
+present; `url` and `logo` are optional absolute `http://` or `https://` URLs.
+
+Pages may override basic WebPage fields:
+
+```yaml
+structured_data:
+  type: WebPage
+  name: "Restaurants in Amherst, MA"
+  description: "A working directory of restaurants in Amherst, Massachusetts."
+```
+
+Page `type` defaults to `WebPage`; no other schema types are supported yet.
+The generated JSON-LD is an inline
+`<script type="application/ld+json">...</script>` in the page head.
 
 ## No External CDN Policy
 
