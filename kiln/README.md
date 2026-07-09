@@ -152,6 +152,7 @@ template:
 <head>
   <meta charset="utf-8">
   <title>{{ page.title }} - {{ site.site.title }}</title>
+  {{ head_integrations_html | safe }}
 </head>
 <body>
   <main>
@@ -162,8 +163,9 @@ template:
 </html>
 ```
 
-`package_scripts_html` contains local script tags for requested vendored
-packages such as MathJax.
+`head_integrations_html` contains validated head scripts for enabled
+integrations such as AdSense Auto ads. `package_scripts_html` contains local
+script tags for requested vendored packages such as MathJax.
 
 ## Static Assets
 
@@ -188,6 +190,51 @@ URLs:
 - `//...`
 
 Inline scripts and local scripts are allowed.
+
+The one first-class external script exception is Google AdSense Auto ads, and
+only when enabled through the structured `integrations.ads` config below. Kiln
+still rejects arbitrary external scripts, including other
+`googlesyndication.com` URLs.
+
+## AdSense Auto Ads
+
+Enable Google AdSense Auto ads in `site.yml`:
+
+```yaml
+integrations:
+  ads:
+    provider: adsense
+    enabled: true
+    mode: auto
+    client: ca-pub-1234567890123456
+```
+
+When enabled, Kiln emits the official AdSense Auto ads script into each page
+head:
+
+```html
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1234567890123456" crossorigin="anonymous"></script>
+```
+
+This is an explicit exception to Kiln's no-arbitrary-external-script policy.
+The generated site will load Google's AdSense script at runtime. Kiln does not
+vendor, download, or rewrite this script during build.
+
+Ads are disabled by default. The configured client must use the conservative
+`ca-pub-` plus digits format. Only `provider: adsense` and `mode: auto` are
+supported in this first pass.
+
+When site ads are enabled, every page gets Auto ads by default. Disable ads on
+individual pages with page-level YAML:
+
+```yaml
+ads:
+  enabled: false
+```
+
+This is useful for pages where ads do not belong, such as privacy, about,
+contact, or legal pages. Page-level `ads.enabled: true` is allowed but
+redundant; it cannot enable ads if site-wide ads are disabled.
 
 ## MathJax
 

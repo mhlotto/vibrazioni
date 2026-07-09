@@ -14,6 +14,14 @@ from kiln.core import KilnError, download_vendor_package, validate_site
 
 
 MATHJAX_SCRIPT = '<script defer src="/vendor/mathjax/es5/tex-mml-chtml.js"></script>'
+ADSENSE_CLIENT = "ca-pub-1234567890123456"
+ADSENSE_URL = (
+    "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"
+    f"?client={ADSENSE_CLIENT}"
+)
+ADSENSE_SCRIPT = (
+    f'<script async src="{ADSENSE_URL}" crossorigin="anonymous"></script>'
+)
 
 
 def write_minimal_site(root: Path) -> None:
@@ -46,6 +54,21 @@ def allow_mathjax(root: Path) -> None:
 assets:
   allowed_js_packages:
     - mathjax
+""",
+        encoding="utf-8",
+    )
+
+
+def enable_adsense(root: Path, client: str = ADSENSE_CLIENT) -> None:
+    (root / "site.yml").write_text(
+        f"""site:
+  title: Test Site
+integrations:
+  ads:
+    provider: adsense
+    enabled: true
+    mode: auto
+    client: {client}
 """,
         encoding="utf-8",
     )
@@ -200,6 +223,295 @@ content:
     )
 
     assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_ads_disabled_by_default_emits_no_adsense_script(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "templates" / "default.html").write_text(
+        "<html><head></head><body>{{ content }}</body></html>",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert "adsbygoogle.js" not in html
+
+
+def test_adsense_enabled_emits_script_in_head(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_adsense(tmp_path)
+    (tmp_path / "templates" / "default.html").write_text(
+        "<html><head>{{ head_integrations_html | safe }}</head><body>{{ content }}</body></html>",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert ADSENSE_SCRIPT in html
+    assert html.index(ADSENSE_SCRIPT) < html.index("</head>")
+
+
+def test_site_ads_enabled_injects_ads_on_normal_pages(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_adsense(tmp_path)
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert ADSENSE_SCRIPT in html
+
+
+def test_page_ads_disabled_suppresses_ads_for_that_page(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_adsense(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Home
+  path: /
+  layout: default
+ads:
+  enabled: false
+content:
+  - type: markdown
+    value: "# Hello"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert ADSENSE_SCRIPT not in html
+
+
+def test_page_ads_enabled_true_is_redundant_but_valid(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_adsense(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Home
+  path: /
+  layout: default
+ads:
+  enabled: true
+content:
+  - type: markdown
+    value: "# Hello"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert ADSENSE_SCRIPT in html
+
+
+def test_page_ads_enabled_must_be_boolean(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_adsense(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Home
+  path: /
+  layout: default
+ads:
+  enabled: "false"
+content:
+  - type: markdown
+    value: "# Hello"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_site_ads_disabled_page_ads_enabled_true_emits_no_ads(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Home
+  path: /
+  layout: default
+ads:
+  enabled: true
+content:
+  - type: markdown
+    value: "# Hello"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert ADSENSE_SCRIPT not in html
+
+
+def test_adsense_older_template_fallback_respects_page_disable(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_adsense(tmp_path)
+    (tmp_path / "templates" / "default.html").write_text(
+        "<html><head><title>{{ page.title }}</title></head><body>{{ content }}</body></html>",
+        encoding="utf-8",
+    )
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Home
+  path: /
+  layout: default
+ads:
+  enabled: false
+content:
+  - type: markdown
+    value: "# Hello"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert ADSENSE_SCRIPT not in html
+
+
+def test_adsense_missing_client_fails_validation(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        """site:
+  title: Test Site
+integrations:
+  ads:
+    provider: adsense
+    enabled: true
+    mode: auto
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_adsense_invalid_client_fails_validation(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_adsense(tmp_path, client="pub-123")
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_adsense_unknown_provider_fails_validation(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        f"""site:
+  title: Test Site
+integrations:
+  ads:
+    provider: other
+    enabled: true
+    mode: auto
+    client: {ADSENSE_CLIENT}
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_adsense_unknown_mode_fails_validation(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        f"""site:
+  title: Test Site
+integrations:
+  ads:
+    provider: adsense
+    enabled: true
+    mode: manual
+    client: {ADSENSE_CLIENT}
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_adsense_exact_generated_script_url_passes_validation(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_adsense(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        f"""page:
+  title: Home
+  path: /
+  layout: default
+content:
+  - type: html
+    value: '<script async src="{ADSENSE_URL}" crossorigin="anonymous"></script>'
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 0
+
+
+def test_adsense_different_googlesyndication_url_fails_validation(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_adsense(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Home
+  path: /
+  layout: default
+content:
+  - type: html
+    value: '<script src="https://pagead2.googlesyndication.com/pagead/js/other.js"></script>'
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 1
+
+
+def test_starter_site_does_not_enable_ads(tmp_path: Path) -> None:
+    site = tmp_path / "site"
+
+    assert main(["init", str(site)]) == 0
+    assert main(["build", str(site)]) == 0
+
+    assert "integrations:" not in (site / "site.yml").read_text(encoding="utf-8")
+    html = (site / "public" / "index.html").read_text(encoding="utf-8")
+    assert "adsbygoogle.js" not in html
+
+
+def test_adsense_injects_into_older_template_before_head_close(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_adsense(tmp_path)
+    (tmp_path / "templates" / "default.html").write_text(
+        "<html><head><title>{{ page.title }}</title></head><body>{{ content }}</body></html>",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert ADSENSE_SCRIPT in html
+    assert html.index(ADSENSE_SCRIPT) < html.index("</head>")
+
+
+def test_adsense_does_not_duplicate_template_variable_output(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_adsense(tmp_path)
+    (tmp_path / "templates" / "default.html").write_text(
+        "<html><head>{{ head_integrations_html | safe }}</head><body>{{ content }}</body></html>",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert html.count(ADSENSE_SCRIPT) == 1
 
 
 def test_validate_catches_protocol_relative_script_urls(tmp_path: Path) -> None:

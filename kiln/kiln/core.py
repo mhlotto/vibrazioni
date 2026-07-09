@@ -21,6 +21,7 @@ from markupsafe import Markup
 
 KNOWN_BLOCK_TYPES = {"markdown", "html", "image", "code", "math"}
 SLUG_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*$")
+ADSENSE_CLIENT_RE = re.compile(r"^ca-pub-\d{10,30}$")
 
 
 class KilnError(Exception):
@@ -55,12 +56,30 @@ class PackageSpec:
     script_tag: str
 
 
+@dataclass(frozen=True)
+class IntegrationSpec:
+    provider: str
+    mode: str
+    script_template: str
+
+
 PACKAGE_REGISTRY = {
     "mathjax": PackageSpec(
         vendor_dir=Path("vendor/mathjax"),
         entrypoint=Path("vendor/mathjax/es5/tex-mml-chtml.js"),
         output_dir=Path("vendor/mathjax"),
         script_tag='<script defer src="/vendor/mathjax/es5/tex-mml-chtml.js"></script>',
+    )
+}
+
+INTEGRATION_REGISTRY = {
+    "adsense_auto": IntegrationSpec(
+        provider="adsense",
+        mode="auto",
+        script_template=(
+            '<script async src="https://pagead2.googlesyndication.com/pagead/js/'
+            'adsbygoogle.js?client={client}" crossorigin="anonymous"></script>'
+        ),
     )
 }
 
@@ -74,15 +93,16 @@ DOWNLOAD_TIMEOUT_SECONDS = 30
 
 
 class AssetPolicyParser(HTMLParser):
-    def __init__(self) -> None:
+    def __init__(self, allowed_external_script_urls: Optional[Set[str]] = None) -> None:
         super().__init__()
+        self.allowed_external_script_urls = allowed_external_script_urls or set()
         self.errors: List[str] = []
 
     def handle_starttag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]) -> None:
         attr = {key.lower(): value for key, value in attrs if value is not None}
         if tag.lower() == "script":
             src = attr.get("src", "")
-            if is_external_url(src):
+            if is_external_url(src) and src not in self.allowed_external_script_urls:
                 self.errors.append(f"external script URL is not allowed: {src}")
 
         if tag.lower() == "link":
@@ -157,7 +177,10 @@ def build_site(path: Path, clean: bool = True) -> List[BuildWarning]:
 
     for page_source in pages:
         html_text = render_page_html(paths, site, page_source)
-        policy_errors = find_asset_policy_errors(html_text)
+        policy_errors = find_asset_policy_errors(
+            html_text,
+            allowed_external_script_urls=integration_allowed_script_urls(site),
+        )
         if policy_errors:
             raise KilnError(
                 "\n".join(f"{page_source.source_path}: {err}" for err in policy_errors)
@@ -440,6 +463,8 @@ def validate_site_config(site_root: Path, site: dict[str, Any]) -> List[str]:
                 f"{site_root / 'site.yml'}: unknown allowed JS package: {package}"
             )
 
+    errors.extend(validate_integrations_config(site_root, site))
+
     build = site.get("build", {})
     if build is None:
         build = {}
@@ -459,6 +484,53 @@ def validate_site_config(site_root: Path, site: dict[str, Any]) -> List[str]:
                     assert_safe_output_dir(site_root, configured_dir)
             except KilnError as err:
                 errors.append(f"{site_root / 'site.yml'}: build.{key}: {err}")
+
+    return errors
+
+
+def validate_integrations_config(site_root: Path, site: dict[str, Any]) -> List[str]:
+    errors: List[str] = []
+    integrations = site.get("integrations", {})
+    if integrations is None:
+        integrations = {}
+    if not isinstance(integrations, dict):
+        return [f"{site_root / 'site.yml'}: integrations must be a mapping"]
+
+    ads = integrations.get("ads")
+    if ads is None:
+        return errors
+    if not isinstance(ads, dict):
+        return [f"{site_root / 'site.yml'}: integrations.ads must be a mapping"]
+
+    enabled = ads.get("enabled", False)
+    if not isinstance(enabled, bool):
+        errors.append(f"{site_root / 'site.yml'}: integrations.ads.enabled must be a boolean")
+        enabled = False
+
+    provider = ads.get("provider")
+    mode = ads.get("mode")
+    client = ads.get("client")
+
+    if provider is not None and provider != "adsense":
+        errors.append(f"{site_root / 'site.yml'}: integrations.ads.provider must be 'adsense'")
+    if mode is not None and mode != "auto":
+        errors.append(f"{site_root / 'site.yml'}: integrations.ads.mode must be 'auto'")
+
+    if enabled:
+        if provider != "adsense":
+            errors.append(f"{site_root / 'site.yml'}: integrations.ads.provider is required and must be 'adsense'")
+        if mode != "auto":
+            errors.append(f"{site_root / 'site.yml'}: integrations.ads.mode is required and must be 'auto'")
+        if not isinstance(client, str) or not client:
+            errors.append(f"{site_root / 'site.yml'}: integrations.ads.client is required when ads are enabled")
+        elif not ADSENSE_CLIENT_RE.match(client):
+            errors.append(
+                f"{site_root / 'site.yml'}: integrations.ads.client must match ca-pub- followed by 10 to 30 digits"
+            )
+    elif client is not None and (not isinstance(client, str) or not ADSENSE_CLIENT_RE.match(client)):
+        errors.append(
+            f"{site_root / 'site.yml'}: integrations.ads.client must match ca-pub- followed by 10 to 30 digits"
+        )
 
     return errors
 
@@ -547,6 +619,66 @@ def package_script_tags(package_names: List[str]) -> str:
         seen.add(package_name)
         tags.append(PACKAGE_REGISTRY[package_name].script_tag)
     return "\n".join(tags)
+
+
+def ads_integration_config(site: dict[str, Any]) -> Optional[dict[str, Any]]:
+    integrations = site.get("integrations", {})
+    if not isinstance(integrations, dict):
+        return None
+    ads = integrations.get("ads", {})
+    if not isinstance(ads, dict) or not ads.get("enabled", False):
+        return None
+    if (
+        ads.get("provider") != "adsense"
+        or ads.get("mode") != "auto"
+        or not isinstance(ads.get("client"), str)
+    ):
+        return None
+    return ads
+
+
+def page_ads_enabled(page_data: dict[str, Any]) -> bool:
+    ads = page_data.get("ads", {})
+    if not isinstance(ads, dict):
+        return True
+    enabled = ads.get("enabled")
+    if enabled is None:
+        return True
+    return bool(enabled)
+
+
+def head_integrations_html(site: dict[str, Any], page_data: Optional[dict[str, Any]] = None) -> str:
+    ads = ads_integration_config(site)
+    if not ads or (page_data is not None and not page_ads_enabled(page_data)):
+        return ""
+    spec = INTEGRATION_REGISTRY["adsense_auto"]
+    return spec.script_template.format(client=ads["client"])
+
+
+def integration_allowed_script_urls(
+    site: dict[str, Any],
+    page_data: Optional[dict[str, Any]] = None,
+) -> Set[str]:
+    html_text = head_integrations_html(site, page_data)
+    if not html_text:
+        return set()
+    parser = ScriptSrcParser()
+    parser.feed(html_text)
+    return parser.script_urls
+
+
+class ScriptSrcParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.script_urls: Set[str] = set()
+
+    def handle_starttag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]) -> None:
+        if tag.lower() != "script":
+            return
+        attr = {key.lower(): value for key, value in attrs if value is not None}
+        src = attr.get("src")
+        if src:
+            self.script_urls.add(src)
 
 
 def validate_unique_output_paths(paths: SitePaths, pages: List[PageSource]) -> List[str]:
@@ -710,6 +842,8 @@ def validate_page(
     if not isinstance(data, dict):
         return [f"{page_source.source_path}: page file must contain a mapping"], warnings
 
+    allowed_external_script_urls = integration_allowed_script_urls(site, data)
+
     page = data.get("page")
     if not isinstance(page, dict):
         errors.append(f"{page_source.source_path}: missing required field: page")
@@ -743,6 +877,13 @@ def validate_page(
         errors.append(f"{page_source.source_path}: missing required field: content")
         content = []
 
+    ads = data.get("ads")
+    if ads is not None:
+        if not isinstance(ads, dict):
+            errors.append(f"{page_source.source_path}: ads must be a mapping")
+        elif "enabled" in ads and not isinstance(ads["enabled"], bool):
+            errors.append(f"{page_source.source_path}: ads.enabled must be a boolean")
+
     for index, block in enumerate(content):
         if not isinstance(block, dict):
             errors.append(f"{page_source.source_path}: content[{index}] must be a mapping")
@@ -765,7 +906,10 @@ def validate_page(
         if block_type == "html":
             errors.extend(
                 f"{page_source.source_path}: content[{index}]: {err}"
-                for err in find_asset_policy_errors(str(block.get("value", "")))
+                for err in find_asset_policy_errors(
+                    str(block.get("value", "")),
+                    allowed_external_script_urls=allowed_external_script_urls,
+                )
             )
 
     packages = data.get("packages", [])
@@ -805,7 +949,10 @@ def validate_page(
         html_text = render_page_html(paths, site, page_source)
         errors.extend(
             f"{page_source.source_path}: {err}"
-            for err in find_asset_policy_errors(html_text)
+            for err in find_asset_policy_errors(
+                html_text,
+                allowed_external_script_urls=allowed_external_script_urls,
+            )
         )
 
     return errors, warnings
@@ -828,6 +975,7 @@ def render_page_html(
 
     rendered_blocks = render_blocks(page_source.data.get("content", []))
     scripts = package_script_tags(requested_packages(page_source.data))
+    head_html = head_integrations_html(site, page_source.data)
     html_text = template.render(
         site=site,
         page=page,
@@ -835,7 +983,14 @@ def render_page_html(
         content=Markup("\n".join(rendered_blocks)),
         packages=page_source.data.get("packages", []),
         package_scripts_html=Markup(scripts),
+        head_integrations_html=Markup(head_html),
     )
+    if head_html and head_html not in html_text:
+        head_index = html_text.lower().find("</head>")
+        if head_index >= 0:
+            html_text = html_text[:head_index] + head_html + "\n" + html_text[head_index:]
+        else:
+            html_text = head_html + "\n" + html_text
     if scripts and scripts not in html_text:
         body_index = html_text.lower().rfind("</body>")
         if body_index >= 0:
@@ -906,8 +1061,11 @@ def is_relative_to(path: Path, parent: Path) -> bool:
     return True
 
 
-def find_asset_policy_errors(html_text: str) -> List[str]:
-    parser = AssetPolicyParser()
+def find_asset_policy_errors(
+    html_text: str,
+    allowed_external_script_urls: Optional[Set[str]] = None,
+) -> List[str]:
+    parser = AssetPolicyParser(allowed_external_script_urls)
     parser.feed(html_text)
     return parser.errors
 
@@ -947,6 +1105,7 @@ STARTER_TEMPLATE_HTML = """<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ page.title }} - {{ site.site.title }}</title>
   {% if meta.description %}<meta name="description" content="{{ meta.description }}">{% endif %}
+  {{ head_integrations_html | safe }}
 </head>
 <body>
   <main>
