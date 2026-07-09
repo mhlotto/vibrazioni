@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import functools
 import http.server
 import sys
@@ -22,6 +23,10 @@ from .core import (
     validate_site,
     vendor_package,
 )
+
+
+class ReusableTCPServer(TCPServer):
+    allow_reuse_address = True
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -138,8 +143,18 @@ def serve_directory(directory: Path, host: str, port: int) -> None:
         http.server.SimpleHTTPRequestHandler,
         directory=str(directory),
     )
-    with TCPServer((host, port), handler) as server:
-        server.serve_forever()
+    try:
+        with ReusableTCPServer((host, port), handler) as server:
+            try:
+                server.serve_forever()
+            except KeyboardInterrupt:
+                print("Stopped server.")
+            finally:
+                server.server_close()
+    except OSError as err:
+        if err.errno == errno.EADDRINUSE:
+            raise KilnError(f"could not bind {host}:{port}; address already in use") from err
+        raise KilnError(f"could not bind {host}:{port}; {err}") from err
 
 
 def main(argv: Optional[List[str]] = None) -> int:

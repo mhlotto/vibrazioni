@@ -148,6 +148,43 @@ The `html` block may contain inline scripts or local script references, but
 Kiln rejects external `http://`, `https://`, and protocol-relative `//` script
 or stylesheet URLs.
 
+## Custom Page Data
+
+Unknown top-level fields in a content YAML file are available to templates
+under `data`. Kiln excludes its own reserved fields such as `page`, `meta`,
+`content`, `packages`, `post`, `ads`, `sitemap`, `integrations`, and `robots`.
+
+Example directory page data:
+
+```yaml
+page:
+  title: "Restaurants in Amherst, MA"
+  path: "/restaurants/amherst/"
+  layout: "directory"
+meta:
+  description: "Restaurants in Amherst, MA."
+content:
+  - type: markdown
+    value: |
+      # Restaurants
+restaurants:
+  - name: "Bueno y Sano"
+    cuisine:
+      - "Mexican"
+```
+
+Template usage:
+
+```html
+{% for restaurant in data.restaurants %}
+  <h2>{{ restaurant.name }}</h2>
+{% endfor %}
+```
+
+This is useful for simple directories and structured one-off pages before
+Kiln has formal custom collections. Kiln does not validate custom data schemas
+in this pass.
+
 ## Posts
 
 Create a post source file with:

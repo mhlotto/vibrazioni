@@ -35,6 +35,20 @@ SITEMAP_CHANGEFREQ_VALUES = {
     "yearly",
     "never",
 }
+RESERVED_PAGE_DATA_KEYS = {
+    "page",
+    "meta",
+    "content",
+    "scripts",
+    "packages",
+    "post",
+    "ads",
+    "sitemap",
+    "integrations",
+    "robots",
+    "rss",
+    "structured_data",
+}
 
 
 class KilnError(Exception):
@@ -765,6 +779,14 @@ def date_key(value: str) -> int:
     return int(value.replace("-", ""))
 
 
+def custom_page_data(page_data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in page_data.items()
+        if key not in RESERVED_PAGE_DATA_KEYS
+    }
+
+
 def ads_integration_config(site: dict[str, Any]) -> Optional[dict[str, Any]]:
     integrations = site.get("integrations", {})
     if not isinstance(integrations, dict):
@@ -1284,6 +1306,7 @@ def render_page_html(
         raise KilnError(f"{page_source.source_path}: template not found: {template_name}") from err
 
     rendered_blocks = render_blocks(page_source.data.get("content", []))
+    content_html = Markup("\n".join(rendered_blocks))
     scripts = package_script_tags(requested_packages(page_source.data))
     head_html = head_integrations_html(site, page_source.data)
     collections = build_collections(pages or [page_source])
@@ -1292,7 +1315,9 @@ def render_page_html(
         page=page,
         post=page_source.data.get("post", {}),
         meta=page_source.data.get("meta", {}),
-        content=Markup("\n".join(rendered_blocks)),
+        content=content_html,
+        content_html=content_html,
+        data=custom_page_data(page_source.data),
         collections=collections,
         packages=page_source.data.get("packages", []),
         package_scripts_html=Markup(scripts),

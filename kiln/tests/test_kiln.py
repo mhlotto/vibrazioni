@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import io
 import shutil
 import tarfile
@@ -10,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kiln.cli import main
+from kiln.cli import ReusableTCPServer, main, serve_directory
 from kiln.core import KilnError, download_vendor_package, validate_site
 
 
@@ -1079,6 +1080,147 @@ content:
     html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
     assert "<h1>Blog</h1>" in html
     assert '<a href="/posts/hello/">Hello</a>' in html
+
+
+def test_custom_top_level_key_appears_under_data(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Restaurants
+  path: /
+  layout: default
+content:
+  - type: markdown
+    value: "# Restaurants"
+restaurants:
+  - name: "Bueno y Sano"
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "templates" / "default.html").write_text(
+        "{{ data.restaurants[0].name }}", encoding="utf-8"
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    assert (tmp_path / "public" / "index.html").read_text(encoding="utf-8") == "Bueno y Sano"
+
+
+def test_reserved_keys_do_not_appear_under_data(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Reserved
+  path: /
+  layout: default
+meta:
+  description: Reserved keys
+packages: []
+post:
+  date: "2026-07-09"
+  draft: false
+  tags: []
+ads:
+  enabled: false
+sitemap:
+  enabled: true
+robots:
+  enabled: true
+integrations: {}
+rss: {}
+structured_data: {}
+scripts: []
+content:
+  - type: markdown
+    value: "# Reserved"
+custom: ok
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "templates" / "default.html").write_text(
+        "{{ data.keys() | list | sort | join(',') }}", encoding="utf-8"
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    assert (tmp_path / "public" / "index.html").read_text(encoding="utf-8") == "custom"
+
+
+def test_template_can_loop_over_data_restaurants(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Restaurants
+  path: /
+  layout: default
+content:
+  - type: markdown
+    value: "# Restaurants"
+restaurants:
+  - name: "Bueno y Sano"
+    cuisine:
+      - "Mexican"
+  - name: "Amherst Coffee"
+    cuisine:
+      - "Cafe"
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "templates" / "default.html").write_text(
+        "{% for restaurant in data.restaurants | sort(attribute='name') %}<h2>{{ restaurant.name }}</h2>{% endfor %}",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert html == "<h2>Amherst Coffee</h2><h2>Bueno y Sano</h2>"
+
+
+def test_unknown_top_level_key_does_not_fail_validation(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "contents" / "index.yml").write_text(
+        """page:
+  title: Custom
+  path: /
+  layout: default
+content:
+  - type: markdown
+    value: "# Custom"
+anything:
+  nested: true
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["validate", str(tmp_path)]) == 0
+
+
+def test_data_is_empty_dict_when_no_custom_keys_are_present(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "templates" / "default.html").write_text(
+        "{{ data == {} }}", encoding="utf-8"
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    assert (tmp_path / "public" / "index.html").read_text(encoding="utf-8") == "True"
+
+
+def test_existing_template_variables_still_work(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "templates" / "default.html").write_text(
+        "{{ site.site.title }}|{{ page.title }}|{{ meta.description|default('', true) }}|"
+        "{{ content }}|{{ content_html }}|{{ collections.posts|length }}|"
+        "{{ package_scripts_html }}|{{ head_integrations_html }}",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert "Test Site|Home||" in html
+    assert "<h1>Hello</h1>|<h1>Hello</h1>|0|" in html
 
 
 def test_sitemap_disabled_by_default_generates_no_sitemap(tmp_path: Path) -> None:
@@ -2542,3 +2684,63 @@ def test_serve_parses_host_and_port(tmp_path: Path) -> None:
         assert main(["serve", "--host", "0.0.0.0", "--port", "8123", str(tmp_path)]) == 0
 
     serve.assert_called_once_with(tmp_path / "public", "0.0.0.0", 8123)
+
+
+def test_serve_server_class_allows_address_reuse() -> None:
+    assert ReusableTCPServer.allow_reuse_address is True
+
+
+def test_serve_keyboard_interrupt_closes_server(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    closed = []
+
+    class FakeServer:
+        def __init__(self, address, handler) -> None:
+            self.address = address
+            self.handler = handler
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        def serve_forever(self) -> None:
+            raise KeyboardInterrupt
+
+        def server_close(self) -> None:
+            closed.append(True)
+
+    with patch("kiln.cli.ReusableTCPServer", FakeServer):
+        serve_directory(tmp_path, "127.0.0.1", 8123)
+
+    captured = capsys.readouterr()
+    assert closed == [True]
+    assert "Stopped server." in captured.out
+    assert "Traceback" not in captured.err
+
+
+def test_serve_bind_failure_reports_clean_error(tmp_path: Path) -> None:
+    class FailingServer:
+        def __init__(self, address, handler) -> None:
+            raise OSError(errno.EADDRINUSE, "Address already in use")
+
+    with patch("kiln.cli.ReusableTCPServer", FailingServer):
+        with pytest.raises(KilnError, match="could not bind 127.0.0.1:8123"):
+            serve_directory(tmp_path, "127.0.0.1", 8123)
+
+
+def test_serve_bind_failure_main_reports_user_facing_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    write_minimal_site(tmp_path)
+
+    class FailingServer:
+        def __init__(self, address, handler) -> None:
+            raise OSError(errno.EADDRINUSE, "Address already in use")
+
+    with patch("kiln.cli.ReusableTCPServer", FailingServer):
+        assert main(["serve", "--port", "8123", str(tmp_path)]) == 1
+
+    captured = capsys.readouterr()
+    assert "error: could not bind 127.0.0.1:8123; address already in use" in captured.err
+    assert "Traceback" not in captured.err
