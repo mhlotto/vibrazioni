@@ -88,6 +88,8 @@ assets:
     - mathjax
 sitemap:
   enabled: true
+badge:
+  enabled: true
 ```
 
 Build directories must be relative paths inside the site root. Kiln rejects
@@ -152,7 +154,8 @@ or stylesheet URLs.
 
 Unknown top-level fields in a content YAML file are available to templates
 under `data`. Kiln excludes its own reserved fields such as `page`, `meta`,
-`content`, `packages`, `post`, `ads`, `sitemap`, `integrations`, and `robots`.
+`content`, `packages`, `post`, `ads`, `sitemap`, `integrations`, `robots`, and
+`badge`.
 
 Example directory page data:
 
@@ -263,6 +266,9 @@ template:
   <main>
     {{ content }}
   </main>
+  <footer>
+    {{ badge_html | safe }}
+  </footer>
   {{ package_scripts_html | safe }}
 </body>
 </html>
@@ -272,7 +278,48 @@ template:
 integrations such as AdSense Auto ads. `structured_data_html` contains
 generated schema.org JSON-LD when structured data is enabled.
 `package_scripts_html` contains local script tags for requested vendored
-packages such as MathJax.
+packages such as MathJax. `badge_html` contains the optional local "Built by
+Kiln" badge link.
+
+## Built by Kiln Badge
+
+Kiln includes a small local "Built by Kiln" PNG badge by default. During build,
+Kiln copies its packaged badge image into the output directory at
+`/kiln/kiln-built-by.png` and exposes this template variable:
+
+```jinja
+{{ badge_html | safe }}
+```
+
+Starter templates place it in the footer. Older templates that do not include
+`badge_html` get fallback injection before `</body>`; if a template has no
+`</body>`, Kiln appends the badge HTML to the end.
+
+Disable the badge:
+
+```yaml
+badge:
+  enabled: false
+```
+
+Customize the link and alt text:
+
+```yaml
+badge:
+  href: "https://example.com/kiln"
+  alt: "Built by Kiln"
+```
+
+Customize the generated image path:
+
+```yaml
+badge:
+  path: "/assets/kiln-built-by.png"
+```
+
+`badge.path` must be an internal absolute path. If `site.base_url` contains a
+path prefix, the badge image `src` is generated with the same `url()` helper
+behavior as other internal assets.
 
 ## URL Prefixes
 
@@ -564,8 +611,9 @@ Static assets under `static_dir` are treated as trusted local project files.
 ## Build, Clean, Serve, Package
 
 `kiln build` validates the site, cleans the output directory by default, copies
-static assets and requested vendored packages, renders pages, and writes
-optional generated files such as `sitemap.xml` and `robots.txt`.
+static assets, requested vendored packages, and the optional built-in badge,
+renders pages, and writes optional generated files such as `sitemap.xml` and
+`robots.txt`.
 
 ```sh
 kiln build

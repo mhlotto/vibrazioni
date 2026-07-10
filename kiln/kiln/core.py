@@ -49,7 +49,12 @@ RESERVED_PAGE_DATA_KEYS = {
     "robots",
     "rss",
     "structured_data",
+    "badge",
 }
+DEFAULT_BADGE_HREF = "https://github.com/mhlotto/vibrazioni/tree/main/kiln"
+DEFAULT_BADGE_ALT = "Built by Kiln"
+DEFAULT_BADGE_PATH = "/kiln/kiln-built-by.png"
+BADGE_ASSET_NAME = "kiln-built-by.png"
 
 
 class KilnError(Exception):
@@ -184,6 +189,7 @@ def validate_site(path: Path) -> List[BuildWarning]:
         warnings.extend(page_warnings)
 
     errors.extend(validate_unique_output_paths(paths, pages))
+    errors.extend(validate_badge_output_path(paths, site, pages))
 
     if errors:
         raise KilnError("\n".join(errors))
@@ -205,6 +211,7 @@ def build_site(path: Path, clean: bool = True) -> List[BuildWarning]:
 
     copy_static(paths.static_dir, paths.output_dir)
     copy_requested_packages(paths, pages)
+    copy_badge(paths, site, pages)
 
     for page_source in pages:
         html_text = render_page_html(paths, site, page_source, pages)
@@ -534,6 +541,7 @@ def validate_site_config(site_root: Path, site: dict[str, Any]) -> List[str]:
 
     errors.extend(validate_integrations_config(site_root, site))
     errors.extend(validate_structured_data_config(site_root, site))
+    errors.extend(validate_badge_config(site_root, site))
     errors.extend(validate_sitemap_config(site_root, site))
     errors.extend(validate_robots_config(site_root, site))
 
@@ -604,6 +612,39 @@ def validate_structured_data_config(site_root: Path, site: dict[str, Any]) -> Li
                     errors.append(
                         f"{site_root / 'site.yml'}: structured_data.organization.{key} must be an absolute http:// or https:// URL"
                     )
+
+    return errors
+
+
+def validate_badge_config(site_root: Path, site: dict[str, Any]) -> List[str]:
+    errors: List[str] = []
+    badge = site.get("badge", {})
+    if badge is None:
+        badge = {}
+    if not isinstance(badge, dict):
+        return [f"{site_root / 'site.yml'}: badge must be a mapping"]
+
+    unknown = set(badge) - {"enabled", "href", "alt", "path"}
+    for key in sorted(unknown):
+        errors.append(f"{site_root / 'site.yml'}: unknown badge field: {key}")
+
+    enabled = badge.get("enabled", True)
+    if not isinstance(enabled, bool):
+        errors.append(f"{site_root / 'site.yml'}: badge.enabled must be a boolean")
+
+    href = badge.get("href", DEFAULT_BADGE_HREF)
+    if not isinstance(href, str) or not is_absolute_http_url(href):
+        errors.append(f"{site_root / 'site.yml'}: badge.href must be an absolute http:// or https:// URL")
+
+    alt = badge.get("alt", DEFAULT_BADGE_ALT)
+    if not isinstance(alt, str):
+        errors.append(f"{site_root / 'site.yml'}: badge.alt must be a string")
+
+    badge_path = badge.get("path", DEFAULT_BADGE_PATH)
+    if not is_safe_badge_path(badge_path):
+        errors.append(
+            f"{site_root / 'site.yml'}: badge.path must be an internal absolute path without '..' or backslashes"
+        )
 
     return errors
 
@@ -1023,6 +1064,55 @@ def template_site(site: dict[str, Any]) -> dict[str, Any]:
     return context_site
 
 
+def badge_config(site: dict[str, Any]) -> dict[str, Any]:
+    badge = site.get("badge", {})
+    if not isinstance(badge, dict):
+        badge = {}
+    return {
+        "enabled": badge.get("enabled", True),
+        "href": badge.get("href", DEFAULT_BADGE_HREF),
+        "alt": badge.get("alt", DEFAULT_BADGE_ALT),
+        "path": badge.get("path", DEFAULT_BADGE_PATH),
+    }
+
+
+def badge_enabled(site: dict[str, Any]) -> bool:
+    return badge_config(site)["enabled"] is True
+
+
+def is_safe_badge_path(value: Any) -> bool:
+    if not isinstance(value, str) or not value.startswith("/") or value.startswith("//"):
+        return False
+    if "\\" in value or ".." in Path(value).parts:
+        return False
+    return True
+
+
+def badge_output_path(paths: SitePaths, site: dict[str, Any]) -> Path:
+    badge_path = badge_config(site)["path"]
+    if not is_safe_badge_path(badge_path):
+        raise KilnError("badge.path must be an internal absolute path without '..' or backslashes")
+    target = paths.output_dir / badge_path.lstrip("/")
+    resolved_target = target.resolve(strict=False)
+    resolved_output = paths.output_dir.resolve(strict=False)
+    if not is_relative_to(resolved_target, resolved_output):
+        raise KilnError(f"badge.path resolves outside output directory: {badge_path}")
+    return target
+
+
+def badge_html(site: dict[str, Any]) -> str:
+    config = badge_config(site)
+    if config["enabled"] is not True:
+        return ""
+    href = html.escape(str(config["href"]), quote=True)
+    src = html.escape(url_for(site, str(config["path"])), quote=True)
+    alt = html.escape(str(config["alt"]), quote=True)
+    return (
+        f'<a class="kiln-badge" href="{href}">'
+        f'<img src="{src}" alt="{alt}" width="88" height="31"></a>'
+    )
+
+
 def page_sitemap_config(page_data: dict[str, Any]) -> dict[str, Any]:
     sitemap = page_data.get("sitemap", {})
     return sitemap if isinstance(sitemap, dict) else {}
@@ -1145,6 +1235,30 @@ def validate_unique_output_paths(paths: SitePaths, pages: List[PageSource]) -> L
     return errors
 
 
+def validate_badge_output_path(
+    paths: SitePaths,
+    site: dict[str, Any],
+    pages: List[PageSource],
+) -> List[str]:
+    if not badge_enabled(site):
+        return []
+    try:
+        target = badge_output_path(paths, site).resolve(strict=False)
+    except KilnError as err:
+        return [str(err)]
+
+    errors = []
+    for page_source in pages:
+        page = page_source.data.get("page", {})
+        if not isinstance(page, dict) or not isinstance(page.get("path"), str):
+            continue
+        if output_file_for_page(paths.output_dir, page["path"]).resolve(strict=False) == target:
+            errors.append(
+                f"{page_source.source_path}: badge.path must not overwrite generated page: {page['path']}"
+            )
+    return errors
+
+
 def copy_requested_packages(paths: SitePaths, pages: List[PageSource]) -> None:
     copied = set()
     for page_source in pages:
@@ -1159,6 +1273,26 @@ def copy_requested_packages(paths: SitePaths, pages: List[PageSource]) -> None:
                 shutil.rmtree(target)
             shutil.copytree(source, target)
             copied.add(package_name)
+
+
+def copy_badge(paths: SitePaths, site: dict[str, Any], pages: List[PageSource]) -> None:
+    if not badge_enabled(site):
+        return
+
+    target = badge_output_path(paths, site)
+    resolved_target = target.resolve(strict=False)
+    for page_source in pages:
+        page = page_source.data.get("page", {})
+        if not isinstance(page, dict) or not isinstance(page.get("path"), str):
+            continue
+        if output_file_for_page(paths.output_dir, page["path"]).resolve(strict=False) == resolved_target:
+            raise KilnError(f"badge.path must not overwrite generated page: {page['path']}")
+
+    source = Path(__file__).parent / "assets" / BADGE_ASSET_NAME
+    if not source.is_file():
+        raise KilnError(f"built-in badge asset is missing: {source}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)
 
 
 def reject_symlinks(root: Path, label: str) -> None:
@@ -1490,6 +1624,7 @@ def render_page_html(
     )
     head_html = head_integrations_html(site, page_source.data)
     schema_html = structured_data_html(site, page_source.data)
+    badge = badge_html(site)
     collections = build_collections(pages or [page_source])
     html_text = template.render(
         site=template_site(site),
@@ -1505,6 +1640,7 @@ def render_page_html(
         package_scripts_html=Markup(scripts),
         head_integrations_html=Markup(head_html),
         structured_data_html=Markup(schema_html),
+        badge_html=Markup(badge),
     )
     if head_html and head_html not in html_text:
         head_index = html_text.lower().find("</head>")
@@ -1518,6 +1654,12 @@ def render_page_html(
             html_text = html_text[:head_index] + schema_html + "\n" + html_text[head_index:]
         else:
             html_text = schema_html + "\n" + html_text
+    if badge and badge not in html_text:
+        body_index = html_text.lower().rfind("</body>")
+        if body_index >= 0:
+            html_text = html_text[:body_index] + badge + "\n" + html_text[body_index:]
+        else:
+            html_text = html_text + "\n" + badge
     if scripts and scripts not in html_text:
         body_index = html_text.lower().rfind("</body>")
         if body_index >= 0:
@@ -1721,6 +1863,9 @@ STARTER_TEMPLATE_HTML = """<!doctype html>
   <main>
     {{ content }}
   </main>
+  <footer>
+    {{ badge_html | safe }}
+  </footer>
   {{ package_scripts_html | safe }}
 </body>
 </html>
@@ -1743,6 +1888,9 @@ STARTER_POST_TEMPLATE_HTML = """<!doctype html>
     {% if post.date %}<p><time datetime="{{ post.date }}">{{ post.date }}</time></p>{% endif %}
     {{ content }}
   </article>
+  <footer>
+    {{ badge_html | safe }}
+  </footer>
   {{ package_scripts_html | safe }}
 </body>
 </html>

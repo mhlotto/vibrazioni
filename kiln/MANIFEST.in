@@ -1,2 +1,3 @@
 include README.md
+include kiln/assets/kiln-built-by.png
 recursive-include examples *

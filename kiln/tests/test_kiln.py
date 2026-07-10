@@ -35,7 +35,14 @@ def write_minimal_site(root: Path) -> None:
     (root / "templates").mkdir()
     (root / "static").mkdir()
     (root / "public").mkdir()
-    (root / "site.yml").write_text("site:\n  title: Test Site\n", encoding="utf-8")
+    (root / "site.yml").write_text(
+        """site:
+  title: Test Site
+badge:
+  enabled: false
+""",
+        encoding="utf-8",
+    )
     (root / "templates" / "default.html").write_text(
         "<html><body>{{ content }}{{ package_scripts_html | safe }}</body></html>",
         encoding="utf-8",
@@ -60,6 +67,8 @@ def allow_mathjax(root: Path) -> None:
 assets:
   allowed_js_packages:
     - mathjax
+badge:
+  enabled: false
 """,
         encoding="utf-8",
     )
@@ -75,6 +84,8 @@ integrations:
     enabled: true
     mode: auto
     client: {client}
+badge:
+  enabled: false
 """,
         encoding="utf-8",
     )
@@ -87,6 +98,8 @@ def enable_sitemap(root: Path, base_url: str = "https://example.com") -> None:
   base_url: "{base_url}"
 sitemap:
   enabled: true
+badge:
+  enabled: false
 """,
         encoding="utf-8",
     )
@@ -108,6 +121,8 @@ def enable_robots(
   enabled: true
   allow_all: {allow_text}
   sitemap: {sitemap_text}
+badge:
+  enabled: false
 """,
         encoding="utf-8",
     )
@@ -129,7 +144,9 @@ structured_data:
   enabled: true
   website:
     name: "My Site"
-{organization_yaml}""",
+{organization_yaml}badge:
+  enabled: false
+""",
         encoding="utf-8",
     )
 
@@ -1472,6 +1489,8 @@ def test_base_url_without_path_gives_empty_base_path(tmp_path: Path) -> None:
         """site:
   title: Test Site
   base_url: "https://cw-complex.com"
+badge:
+  enabled: false
 """,
         encoding="utf-8",
     )
@@ -1490,6 +1509,8 @@ def test_base_url_with_path_gives_base_path(tmp_path: Path) -> None:
         """site:
   title: Test Site
   base_url: "https://cw-complex.com/amherst-area/"
+badge:
+  enabled: false
 """,
         encoding="utf-8",
     )
@@ -1508,6 +1529,8 @@ def test_url_helper_root_with_base_path(tmp_path: Path) -> None:
         """site:
   title: Test Site
   base_url: "https://cw-complex.com/amherst-area"
+badge:
+  enabled: false
 """,
         encoding="utf-8",
     )
@@ -1524,6 +1547,8 @@ def test_url_helper_page_path_with_base_path(tmp_path: Path) -> None:
         """site:
   title: Test Site
   base_url: "https://cw-complex.com/amherst-area"
+badge:
+  enabled: false
 """,
         encoding="utf-8",
     )
@@ -1544,6 +1569,8 @@ def test_url_helper_asset_path_with_base_path(tmp_path: Path) -> None:
         """site:
   title: Test Site
   base_url: "https://cw-complex.com/amherst-area"
+badge:
+  enabled: false
 """,
         encoding="utf-8",
     )
@@ -2831,6 +2858,193 @@ def test_vendor_mathjax_download_generates_no_cdn_urls(
     assert "https://" not in html
     assert "http://" not in html
     assert 'src="//' not in html
+
+
+def enable_default_badge(root: Path) -> None:
+    (root / "site.yml").write_text("site:\n  title: Test Site\n", encoding="utf-8")
+
+
+def test_badge_enabled_by_default(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_default_badge(tmp_path)
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert 'class="kiln-badge"' in html
+    assert (tmp_path / "public" / "kiln" / "kiln-built-by.png").is_file()
+
+
+def test_starter_site_copies_badge_and_template_emits_badge_html(tmp_path: Path) -> None:
+    site = tmp_path / "site"
+
+    assert main(["init", str(site)]) == 0
+    assert "{{ badge_html | safe }}" in (site / "templates" / "default.html").read_text(
+        encoding="utf-8"
+    )
+    assert "{{ badge_html | safe }}" in (site / "templates" / "post.html").read_text(
+        encoding="utf-8"
+    )
+    assert main(["build", str(site)]) == 0
+
+    html = (site / "public" / "index.html").read_text(encoding="utf-8")
+    assert 'class="kiln-badge"' in html
+    assert (site / "public" / "kiln" / "kiln-built-by.png").is_file()
+
+
+def test_badge_disabled_copies_no_image_and_emits_no_html(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert 'class="kiln-badge"' not in html
+    assert not (tmp_path / "public" / "kiln" / "kiln-built-by.png").exists()
+
+
+def test_badge_uses_custom_href_alt_and_path(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        """site:
+  title: Test Site
+badge:
+  href: "https://example.com/kiln?x=1"
+  alt: "Built & tested"
+  path: "/assets/kiln-built-by.png"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert 'href="https://example.com/kiln?x=1"' in html
+    assert 'alt="Built &amp; tested"' in html
+    assert 'src="/assets/kiln-built-by.png"' in html
+    assert (tmp_path / "public" / "assets" / "kiln-built-by.png").is_file()
+
+
+def test_badge_path_respects_base_path(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        """site:
+  title: Test Site
+  base_url: "https://example.com/amherst-area"
+badge:
+  path: "/assets/kiln-built-by.png"
+""",
+        encoding="utf-8",
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert 'src="/amherst-area/assets/kiln-built-by.png"' in html
+
+
+@pytest.mark.parametrize(
+    ("badge_yaml", "message"),
+    [
+        ("enabled: 1", "badge.enabled must be a boolean"),
+        ('href: "ftp://example.com"', "badge.href must be an absolute"),
+        ("alt: 123", "badge.alt must be a string"),
+        ('path: "kiln-built-by.png"', "badge.path must be an internal absolute path"),
+        ('path: "//example.com/badge.png"', "badge.path must be an internal absolute path"),
+        ('path: "/../badge.png"', "badge.path must be an internal absolute path"),
+        ('path: "/bad\\\\badge.png"', "badge.path must be an internal absolute path"),
+        ("theme: dark", "unknown badge field"),
+    ],
+)
+def test_invalid_badge_config_fails_validation(
+    tmp_path: Path, badge_yaml: str, message: str
+) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        f"""site:
+  title: Test Site
+badge:
+  {badge_yaml}
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(KilnError, match=message):
+        validate_site(tmp_path)
+
+
+def test_badge_path_cannot_overwrite_page_output(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    (tmp_path / "site.yml").write_text(
+        """site:
+  title: Test Site
+badge:
+  path: "/index.html"
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(KilnError, match="must not overwrite generated page"):
+        validate_site(tmp_path)
+    assert main(["build", str(tmp_path)]) == 1
+
+
+def test_old_template_without_badge_html_gets_fallback_injection(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_default_badge(tmp_path)
+    (tmp_path / "templates" / "default.html").write_text(
+        "<html><body>{{ content }}</body></html>", encoding="utf-8"
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert html.index('class="kiln-badge"') < html.index("</body>")
+
+
+def test_template_with_badge_html_avoids_duplicate_fallback(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_default_badge(tmp_path)
+    (tmp_path / "templates" / "default.html").write_text(
+        "<html><body>{{ badge_html | safe }}</body></html>", encoding="utf-8"
+    )
+
+    assert main(["build", str(tmp_path)]) == 0
+
+    html = (tmp_path / "public" / "index.html").read_text(encoding="utf-8")
+    assert html.count('class="kiln-badge"') == 1
+
+
+def test_package_zip_includes_badge_image_when_enabled(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    enable_default_badge(tmp_path)
+    archive_path = tmp_path / "site.zip"
+
+    assert main(["package", "-o", str(archive_path), str(tmp_path)]) == 0
+
+    with zipfile.ZipFile(archive_path) as archive:
+        assert "kiln/kiln-built-by.png" in archive.namelist()
+
+
+def test_package_zip_excludes_badge_image_when_disabled(tmp_path: Path) -> None:
+    write_minimal_site(tmp_path)
+    archive_path = tmp_path / "site.zip"
+
+    assert main(["package", "-o", str(archive_path), str(tmp_path)]) == 0
+
+    with zipfile.ZipFile(archive_path) as archive:
+        assert "kiln/kiln-built-by.png" not in archive.namelist()
+
+
+def test_badge_asset_is_included_as_package_data() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+
+    assert (project_root / "kiln" / "assets" / "kiln-built-by.png").is_file()
+    assert "assets/kiln-built-by.png" in (project_root / "setup.cfg").read_text(
+        encoding="utf-8"
+    )
+    assert "kiln/assets/kiln-built-by.png" in (project_root / "MANIFEST.in").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_clean_removes_stale_files_from_configured_output_dir(tmp_path: Path) -> None:
