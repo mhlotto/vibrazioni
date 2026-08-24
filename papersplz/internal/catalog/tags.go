@@ -16,7 +16,7 @@ type TagUsage struct {
 }
 
 var readingStatusTags = map[string]struct{}{
-	"to-read": {},
+	"unread":  {},
 	"reading": {},
 	"read":    {},
 }

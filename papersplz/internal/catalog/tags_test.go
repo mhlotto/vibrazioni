@@ -93,14 +93,14 @@ func TestIdempotentTagMutationPreservesUpdatedAt(t *testing.T) {
 
 func TestSetReadingStatus(t *testing.T) {
 	catalogPath := newTestCatalog(t)
-	paper := testInspectionPaper("a81f32c991b7", "Reading Paper", nil, []string{"topology", "to-read", "read"})
+	paper := testInspectionPaper("a81f32c991b7", "Reading Paper", nil, []string{"topology", "unread", "read"})
 	writeCatalogPaper(t, catalogPath, paper)
 
 	statuses := []struct {
 		name string
 		tag  string
 	}{
-		{name: "unread", tag: "to-read"},
+		{name: "unread", tag: "unread"},
 		{name: "reading", tag: "reading"},
 		{name: "read", tag: "read"},
 	}

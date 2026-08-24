@@ -690,7 +690,7 @@ func TestMarkCommands(t *testing.T) {
 		command string
 		tag     string
 	}{
-		{command: "unread", tag: "to-read"},
+		{command: "unread", tag: "unread"},
 		{command: "reading", tag: "reading"},
 		{command: "read", tag: "read"},
 	} {
@@ -719,7 +719,7 @@ func TestReadingStatusTagWorkflow(t *testing.T) {
 	if err := catalog.Initialize(catalogPath, "Reading", "", time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	paper := cliFixturePaper("abcd000000000000", "Queued Paper", nil, []string{"topology", "to-read"}, time.Now().UTC())
+	paper := cliFixturePaper("abcd000000000000", "Queued Paper", nil, []string{"topology", "unread"}, time.Now().UTC())
 	writeCLIFixturePaper(t, catalogPath, paper)
 
 	assertFiltered := func(tag string, wantCount int) {
@@ -736,10 +736,10 @@ func TestReadingStatusTagWorkflow(t *testing.T) {
 			t.Fatalf("list --tag %s returned %#v, want %d paper(s)", tag, listed, wantCount)
 		}
 	}
-	assertFiltered("to-read", 1)
+	assertFiltered("unread", 1)
 
 	for _, args := range [][]string{
-		{"tag", "remove", paper.ID[:8], "to-read"},
+		{"tag", "remove", paper.ID[:8], "unread"},
 		{"tag", "add", paper.ID[:8], "reading"},
 	} {
 		status, _, stderr := runForTest(append([]string{"--home", catalogPath}, args...), nil)
@@ -747,7 +747,7 @@ func TestReadingStatusTagWorkflow(t *testing.T) {
 			t.Fatalf("%v: status = %d, stderr = %q", args, status, stderr)
 		}
 	}
-	assertFiltered("to-read", 0)
+	assertFiltered("unread", 0)
 	assertFiltered("reading", 1)
 
 	for _, args := range [][]string{

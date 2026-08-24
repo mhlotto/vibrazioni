@@ -150,7 +150,7 @@ func runMark(catalogHome string, args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	statusTags := map[string]string{
-		"unread":  "to-read",
+		"unread":  "unread",
 		"reading": "reading",
 		"read":    "read",
 	}

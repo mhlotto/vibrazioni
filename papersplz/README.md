@@ -78,7 +78,7 @@ pplz add "$HOME/Downloads/paper.pdf" \
   --title "Some Interesting Paper" \
   --author "Alice Smith" --author "Bob Jones" \
   --source "Journal of Interesting Things" \
-  --tag topology --tag to-read
+  --tag topology --tag unread
 
 pplz add "https://example.org/paper.pdf" --title "A Remote Paper"
 ```
@@ -151,9 +151,9 @@ pplz comment remove PAPER_ID COMMENT_ID
 ```
 
 ```sh
-pplz tag add PAPER_ID topology to-read
+pplz tag add PAPER_ID topology unread
 pplz tag list PAPER_ID
-pplz tag remove PAPER_ID to-read
+pplz tag remove PAPER_ID unread
 pplz tags
 ```
 
@@ -161,7 +161,7 @@ Tags are normalized to lowercase. `pplz tags` lists catalog-wide usage by count
 descending, then tag name ascending. Editing requires `EDITOR`; the program
 does not guess an editor.
 
-Reading status uses the conventional tags `to-read`, `reading`, and `read`:
+Reading status uses the conventional tags `unread`, `reading`, and `read`:
 
 ```sh
 pplz mark unread PAPER_ID
@@ -203,7 +203,7 @@ terms use AND semantics and may match different fields:
 ```sh
 pplz search spectral sequence
 pplz search serre --tag topology --author alice
-pplz search --tag to-read
+pplz search --tag unread
 ```
 
 Search performs a linear metadata scan and creates no index.
