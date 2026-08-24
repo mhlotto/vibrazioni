@@ -155,6 +155,18 @@ Tags are normalized to lowercase. `pplz tags` lists catalog-wide usage by count
 descending, then tag name ascending. Editing requires `EDITOR`; the program
 does not guess an editor.
 
+Reading status uses the conventional tags `to-read`, `reading`, and `read`:
+
+```sh
+pplz tag remove PAPER_ID to-read
+pplz tag add PAPER_ID reading
+pplz list --tag reading
+```
+
+These remain ordinary, user-managed tags rather than a separate schema field.
+See [READING_STATUS.md](READING_STATUS.md) for the recommended workflow and the
+criteria for reconsidering first-class status metadata.
+
 ## Paper relationships
 
 Relationships use a fixed vocabulary and reference papers in the same catalog:

@@ -653,6 +653,67 @@ func TestTagCommands(t *testing.T) {
 	}
 }
 
+func TestReadingStatusTagWorkflow(t *testing.T) {
+	catalogPath := filepath.Join(t.TempDir(), "catalog")
+	if err := catalog.Initialize(catalogPath, "Reading", "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	paper := cliFixturePaper("abcd000000000000", "Queued Paper", nil, []string{"topology", "to-read"}, time.Now().UTC())
+	writeCLIFixturePaper(t, catalogPath, paper)
+
+	assertFiltered := func(tag string, wantCount int) {
+		t.Helper()
+		status, stdout, stderr := runForTest([]string{"--home", catalogPath, "list", "--tag", tag, "--json"}, nil)
+		if status != 0 || stderr != "" {
+			t.Fatalf("list --tag %s: status = %d, stderr = %q", tag, status, stderr)
+		}
+		var listed []ListOutput
+		if err := json.Unmarshal([]byte(stdout), &listed); err != nil {
+			t.Fatal(err)
+		}
+		if len(listed) != wantCount {
+			t.Fatalf("list --tag %s returned %#v, want %d paper(s)", tag, listed, wantCount)
+		}
+	}
+	assertFiltered("to-read", 1)
+
+	for _, args := range [][]string{
+		{"tag", "remove", paper.ID[:8], "to-read"},
+		{"tag", "add", paper.ID[:8], "reading"},
+	} {
+		status, _, stderr := runForTest(append([]string{"--home", catalogPath}, args...), nil)
+		if status != 0 || stderr != "" {
+			t.Fatalf("%v: status = %d, stderr = %q", args, status, stderr)
+		}
+	}
+	assertFiltered("to-read", 0)
+	assertFiltered("reading", 1)
+
+	for _, args := range [][]string{
+		{"tag", "remove", paper.ID, "reading"},
+		{"tag", "add", paper.ID, "read"},
+	} {
+		status, _, stderr := runForTest(append([]string{"--home", catalogPath}, args...), nil)
+		if status != 0 || stderr != "" {
+			t.Fatalf("%v: status = %d, stderr = %q", args, status, stderr)
+		}
+	}
+	assertFiltered("reading", 0)
+	assertFiltered("read", 1)
+
+	status, stdout, stderr := runForTest([]string{"--home", catalogPath, "export"}, nil)
+	if status != 0 || stderr != "" {
+		t.Fatalf("export: status = %d, stderr = %q", status, stderr)
+	}
+	var exported ExportOutput
+	if err := json.Unmarshal([]byte(stdout), &exported); err != nil {
+		t.Fatal(err)
+	}
+	if len(exported.Papers) != 1 || !reflect.DeepEqual(exported.Papers[0].Tags, []string{"topology", "read"}) {
+		t.Fatalf("exported tags = %#v", exported.Papers)
+	}
+}
+
 func TestReviewCommands(t *testing.T) {
 	catalogPath := filepath.Join(t.TempDir(), "catalog")
 	if err := catalog.Initialize(catalogPath, "Test", "", time.Now()); err != nil {
