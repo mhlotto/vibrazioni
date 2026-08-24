@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/mhlotto/vibrazioni/papersplz/internal/catalog"
 )
@@ -13,7 +14,7 @@ import (
 const usage = `Usage: papersplz [--home PATH] COMMAND [ARGUMENTS]
 
 Commands:
-  init PATH       create a catalog (not yet implemented)
+  init PATH       create a catalog
   add             add a paper (not yet implemented)
   remove          remove a paper (not yet implemented)
   show            show a paper (not yet implemented)
@@ -62,12 +63,7 @@ func Run(args []string, stdout, stderr io.Writer, lookupEnv func(string) (string
 		fmt.Fprint(stdout, usage)
 		return 0
 	case "init":
-		if len(commandArgs) == 0 {
-			fmt.Fprintln(stderr, "papersplz: init requires PATH")
-			return 2
-		}
-		fmt.Fprintln(stderr, "papersplz: init is not implemented")
-		return 1
+		return runInit(commandArgs, stdout, stderr)
 	}
 
 	if _, ok := catalogCommands[command]; !ok {
@@ -82,4 +78,34 @@ func Run(args []string, stdout, stderr io.Writer, lookupEnv func(string) (string
 
 	fmt.Fprintf(stderr, "papersplz: %s is not implemented\n", command)
 	return 1
+}
+
+func runInit(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "papersplz: init requires PATH")
+		return 2
+	}
+	path := args[0]
+	flags := flag.NewFlagSet("papersplz init", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	flags.Usage = func() {}
+	name := flags.String("name", "", "catalog name (required)")
+	description := flags.String("description", "", "catalog description")
+	if err := flags.Parse(args[1:]); err != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(stderr, "papersplz: init accepts one PATH")
+		return 2
+	}
+	if *name == "" {
+		fmt.Fprintln(stderr, "papersplz: init requires --name NAME")
+		return 2
+	}
+	if err := catalog.Initialize(path, *name, *description, time.Now().UTC()); err != nil {
+		fmt.Fprintf(stderr, "papersplz: init: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "Initialized catalog at %s\n", path)
+	return 0
 }

@@ -2,8 +2,12 @@ package cli
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mhlotto/vibrazioni/papersplz/internal/store"
 )
 
 func runForTest(args []string, env map[string]string) (int, string, string) {
@@ -59,15 +63,22 @@ func TestCatalogSourcesAllowDispatch(t *testing.T) {
 }
 
 func TestInitDoesNotRequireCatalogHome(t *testing.T) {
-	status, stdout, stderr := runForTest([]string{"init", "/new/catalog"}, nil)
-	if status == 0 {
-		t.Fatal("Run() status = 0 while init is a stub")
+	path := filepath.Join(t.TempDir(), "catalog")
+	status, stdout, stderr := runForTest([]string{"init", path, "--name", "Mathematics", "--description", "Papers"}, nil)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, want 0; stderr = %q", status, stderr)
 	}
-	if stdout != "" {
-		t.Fatalf("stdout = %q, want empty", stdout)
+	if !strings.Contains(stdout, path) {
+		t.Fatalf("stdout = %q, want catalog path", stdout)
+	}
+	if stderr != "" {
+		t.Fatalf("stderr = %q, want empty", stderr)
 	}
 	if strings.Contains(stderr, "catalog home is required") {
 		t.Fatalf("stderr = %q, init must bypass catalog selection", stderr)
+	}
+	if _, err := os.Stat(filepath.Join(path, store.CatalogFilename)); err != nil {
+		t.Fatalf("catalog metadata was not created: %v", err)
 	}
 }
 
@@ -81,6 +92,7 @@ func TestBasicErrorsUseStderr(t *testing.T) {
 		{name: "unknown command", args: []string{"nope"}, want: "unknown command"},
 		{name: "missing home value", args: []string{"--home"}, want: "flag needs an argument"},
 		{name: "init missing path", args: []string{"init"}, want: "init requires PATH"},
+		{name: "init missing name", args: []string{"init", t.TempDir()}, want: "init requires --name"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
