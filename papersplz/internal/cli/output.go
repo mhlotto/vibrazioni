@@ -33,6 +33,12 @@ type ListOutput struct {
 	Authors []string `json:"authors"`
 }
 
+type SearchOutput struct {
+	ID      string   `json:"id"`
+	Title   string   `json:"title"`
+	Authors []string `json:"authors"`
+}
+
 type TagListOutput struct {
 	PaperID string   `json:"paper_id"`
 	Tags    []string `json:"tags"`
@@ -81,6 +87,14 @@ func newListOutput(papers []model.Paper) []ListOutput {
 			Title:   paper.Title,
 			Authors: nonNilStrings(paper.Authors),
 		}
+	}
+	return output
+}
+
+func newSearchOutput(papers []model.Paper) []SearchOutput {
+	output := make([]SearchOutput, len(papers))
+	for i, paper := range papers {
+		output[i] = SearchOutput{ID: paper.ID, Title: paper.Title, Authors: nonNilStrings(paper.Authors)}
 	}
 	return output
 }

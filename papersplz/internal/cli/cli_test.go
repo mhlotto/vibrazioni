@@ -62,9 +62,9 @@ func TestCatalogSourcesAllowDispatch(t *testing.T) {
 		args []string
 		env  map[string]string
 	}{
-		{name: "home flag", args: []string{"--home", "/flag/catalog", "search"}},
-		{name: "environment", args: []string{"search"}, env: map[string]string{"PAPERSPLZ_HOME": "/env/catalog"}},
-		{name: "flag overrides environment", args: []string{"--home", "/flag/catalog", "search"}, env: map[string]string{"PAPERSPLZ_HOME": "/env/catalog"}},
+		{name: "home flag", args: []string{"--home", "/flag/catalog", "doctor"}},
+		{name: "environment", args: []string{"doctor"}, env: map[string]string{"PAPERSPLZ_HOME": "/env/catalog"}},
+		{name: "flag overrides environment", args: []string{"--home", "/flag/catalog", "doctor"}, env: map[string]string{"PAPERSPLZ_HOME": "/env/catalog"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -529,6 +529,55 @@ func TestCommentCommands(t *testing.T) {
 	}
 	if len(stored.Comments) != 1 || stored.Comments[0].ID != secondID {
 		t.Fatalf("comments after remove = %#v", stored.Comments)
+	}
+}
+
+func TestSearchCommandHumanJSONAndInterspersedFilters(t *testing.T) {
+	catalogPath, paper := removeCLIFixture(t)
+	timestamp := paper.UpdatedAt
+	paper.Title = "Spectral Methods"
+	paper.Source = "Annals"
+	paper.Review = &model.Review{Text: "Serre construction", CreatedAt: timestamp, UpdatedAt: timestamp}
+	paper.Comments = []model.Comment{{ID: "11110000", Text: "Check convergence", CreatedAt: timestamp, UpdatedAt: timestamp}}
+	if err := store.WritePaper(filepath.Join(catalogPath, catalog.PapersDirectory, paper.ID, store.RecordFilename), paper); err != nil {
+		t.Fatal(err)
+	}
+	other := cliFixturePaper("bbbb000000000000", "Algebra Notes", []string{"Bob"}, []string{"algebra"}, timestamp)
+	writeCLIFixturePaper(t, catalogPath, other)
+
+	status, stdout, stderr := runForTest([]string{
+		"--home", catalogPath, "search", "spectral", "serre", "convergence", "--tag", "TEST", "--author=ALICE",
+	}, nil)
+	if status != 0 || stderr != "" {
+		t.Fatalf("human search: status = %d, stderr = %q", status, stderr)
+	}
+	if !strings.Contains(stdout, "Spectral Methods") || strings.Contains(stdout, "Algebra Notes") {
+		t.Fatalf("human search output = %q", stdout)
+	}
+
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "search", "--json", "--tag=test", "annals"}, nil)
+	if status != 0 || stderr != "" {
+		t.Fatalf("JSON search: status = %d, stderr = %q", status, stderr)
+	}
+	var output []SearchOutput
+	if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+		t.Fatalf("decode JSON: %v; output = %q", err, stdout)
+	}
+	want := []SearchOutput{{ID: paper.ID, Title: "Spectral Methods", Authors: []string{"Alice"}}}
+	if !reflect.DeepEqual(output, want) {
+		t.Fatalf("JSON output = %#v, want %#v", output, want)
+	}
+
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "search", "not-present", "--json"}, nil)
+	if status != 0 || stderr != "" || strings.TrimSpace(stdout) != "[]" {
+		t.Fatalf("empty JSON search: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+}
+
+func TestSearchCommandRejectsUnknownOptions(t *testing.T) {
+	status, stdout, stderr := runForTest([]string{"--home", t.TempDir(), "search", "term", "--regexp"}, nil)
+	if status != 2 || stdout != "" || !strings.Contains(stderr, "unknown option") {
+		t.Fatalf("status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
 	}
 }
 

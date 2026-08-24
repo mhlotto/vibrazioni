@@ -29,7 +29,7 @@ Commands:
   review          show, set, edit, or remove a review
   comment         add, list, show, edit, or remove comments
   tag             add, remove, or list paper tags
-  search          search papers (not yet implemented)
+  search          search paper metadata
   doctor          check catalog consistency (not yet implemented)
 `
 
@@ -109,10 +109,73 @@ func run(args []string, stdin io.Reader, interactive bool, stdout, stderr io.Wri
 		return runReview(catalogHome, commandArgs, stdin, stdout, stderr, lookupEnv)
 	case "comment":
 		return runComment(catalogHome, commandArgs, stdin, stdout, stderr, lookupEnv)
+	case "search":
+		return runSearch(catalogHome, commandArgs, stdout, stderr)
 	}
 
 	fmt.Fprintf(stderr, "papersplz: %s is not implemented\n", command)
 	return 1
+}
+
+func runSearch(catalogHome string, args []string, stdout, stderr io.Writer) int {
+	options, jsonOutput, err := parseSearchArgs(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: search: %v\n", err)
+		return 2
+	}
+	papers, err := catalog.SearchPapers(catalogHome, options)
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: search: %v\n", err)
+		return 1
+	}
+	if jsonOutput {
+		if err := writeJSON(stdout, newSearchOutput(papers)); err != nil {
+			fmt.Fprintf(stderr, "papersplz: search: write JSON: %v\n", err)
+			return 1
+		}
+	} else if err := writeList(stdout, papers); err != nil {
+		fmt.Fprintf(stderr, "papersplz: search: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func parseSearchArgs(args []string) (catalog.SearchOptions, bool, error) {
+	var options catalog.SearchOptions
+	jsonOutput := false
+	flagsEnabled := true
+	for i := 0; i < len(args); i++ {
+		argument := args[i]
+		if flagsEnabled && argument == "--" {
+			flagsEnabled = false
+			continue
+		}
+		if !flagsEnabled || !strings.HasPrefix(argument, "-") || argument == "-" {
+			options.Terms = append(options.Terms, argument)
+			continue
+		}
+		switch {
+		case argument == "--json":
+			jsonOutput = true
+		case argument == "--tag" || argument == "--author":
+			if i+1 >= len(args) {
+				return catalog.SearchOptions{}, false, fmt.Errorf("%s requires a value", argument)
+			}
+			i++
+			if argument == "--tag" {
+				options.Tag = args[i]
+			} else {
+				options.Author = args[i]
+			}
+		case strings.HasPrefix(argument, "--tag="):
+			options.Tag = strings.TrimPrefix(argument, "--tag=")
+		case strings.HasPrefix(argument, "--author="):
+			options.Author = strings.TrimPrefix(argument, "--author=")
+		default:
+			return catalog.SearchOptions{}, false, fmt.Errorf("unknown option %q", argument)
+		}
+	}
+	return options, jsonOutput, nil
 }
 
 func runComment(catalogHome string, args []string, stdin io.Reader, stdout, stderr io.Writer, lookupEnv func(string) (string, bool)) int {
