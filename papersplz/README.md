@@ -12,6 +12,7 @@ can have a single review that can be set, shown, edited, or removed. Papers can
 also have multiple timestamped comments that can be added, listed, shown,
 edited, and removed. Paper metadata can be searched with case-insensitive terms
 and tag or author filters. Remaining catalog operations are not yet implemented.
+Catalog consistency can be checked without modification using `doctor`.
 
 ```sh
 go run ./cmd/papersplz help
@@ -29,4 +30,5 @@ go run ./cmd/papersplz --home /path/to/catalog review show PAPER_ID --json
 go run ./cmd/papersplz --home /path/to/catalog comment add PAPER_ID "Working note"
 go run ./cmd/papersplz --home /path/to/catalog comment list PAPER_ID --json
 go run ./cmd/papersplz --home /path/to/catalog search spectral sequence --tag topology --json
+go run ./cmd/papersplz --home /path/to/catalog doctor
 ```

@@ -30,7 +30,7 @@ Commands:
   comment         add, list, show, edit, or remove comments
   tag             add, remove, or list paper tags
   search          search paper metadata
-  doctor          check catalog consistency (not yet implemented)
+  doctor          check catalog consistency
 `
 
 var catalogCommands = map[string]struct{}{
@@ -111,9 +111,28 @@ func run(args []string, stdin io.Reader, interactive bool, stdout, stderr io.Wri
 		return runComment(catalogHome, commandArgs, stdin, stdout, stderr, lookupEnv)
 	case "search":
 		return runSearch(catalogHome, commandArgs, stdout, stderr)
+	case "doctor":
+		return runDoctor(catalogHome, commandArgs, stdout, stderr)
 	}
 
 	fmt.Fprintf(stderr, "papersplz: %s is not implemented\n", command)
+	return 1
+}
+
+func runDoctor(catalogHome string, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 0 {
+		fmt.Fprintln(stderr, "papersplz: doctor does not accept arguments")
+		return 2
+	}
+	problems := catalog.Doctor(catalogHome)
+	if len(problems) == 0 {
+		fmt.Fprintln(stdout, "Catalog is healthy.")
+		return 0
+	}
+	for _, problem := range problems {
+		fmt.Fprintf(stdout, "problem: %s\n", problem)
+	}
+	fmt.Fprintf(stdout, "%d problem(s) found.\n", len(problems))
 	return 1
 }
 

@@ -70,16 +70,16 @@ func TestCatalogSourcesAllowDispatch(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			status, stdout, stderr := runForTest(tt.args, tt.env)
 			if status == 0 {
-				t.Fatal("Run() status = 0 while command is a stub")
-			}
-			if stdout != "" {
-				t.Fatalf("stdout = %q, want empty", stdout)
+				t.Fatal("Run() status = 0 for missing catalog")
 			}
 			if strings.Contains(stderr, "catalog home is required") {
 				t.Fatalf("stderr = %q, catalog should have resolved", stderr)
 			}
-			if !strings.Contains(stderr, "not implemented") {
-				t.Fatalf("stderr = %q, want dispatch result", stderr)
+			if stderr != "" {
+				t.Fatalf("stderr = %q, want doctor findings on stdout", stderr)
+			}
+			if !strings.Contains(stdout, "problem:") {
+				t.Fatalf("stdout = %q, want dispatch result", stdout)
 			}
 		})
 	}
@@ -578,6 +578,30 @@ func TestSearchCommandRejectsUnknownOptions(t *testing.T) {
 	status, stdout, stderr := runForTest([]string{"--home", t.TempDir(), "search", "term", "--regexp"}, nil)
 	if status != 2 || stdout != "" || !strings.Contains(stderr, "unknown option") {
 		t.Fatalf("status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+}
+
+func TestDoctorCommandCleanAndProblems(t *testing.T) {
+	catalogPath := filepath.Join(t.TempDir(), "catalog")
+	if err := catalog.Initialize(catalogPath, "Test", "", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	status, stdout, stderr := runForTest([]string{"--home", catalogPath, "doctor"}, nil)
+	if status != 0 || stderr != "" || stdout != "Catalog is healthy.\n" {
+		t.Fatalf("clean doctor: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+
+	if err := os.WriteFile(filepath.Join(catalogPath, store.CatalogFilename), []byte("not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "doctor"}, nil)
+	if status == 0 || stderr != "" || !strings.Contains(stdout, "problem: catalog.json") || !strings.Contains(stdout, "problem(s) found") {
+		t.Fatalf("corrupt doctor: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "doctor", "extra"}, nil)
+	if status != 2 || stdout != "" || !strings.Contains(stderr, "does not accept arguments") {
+		t.Fatalf("doctor arguments: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
 	}
 }
 
