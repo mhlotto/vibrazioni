@@ -263,6 +263,40 @@ func TestShowListAndPathCommands(t *testing.T) {
 	})
 }
 
+func TestOpenCommand(t *testing.T) {
+	catalogPath := filepath.Join(t.TempDir(), "catalog")
+	if err := catalog.Initialize(catalogPath, "Test", "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	paper := cliFixturePaper("abcd000000000000", "Stored Paper", nil, nil, time.Now().UTC())
+	writeCLIFixturePaper(t, catalogPath, paper)
+	wantPath := filepath.Join(catalogPath, catalog.PapersDirectory, paper.ID, paper.File.Name)
+
+	originalOpen := openStoredDocument
+	t.Cleanup(func() { openStoredDocument = originalOpen })
+	var openedPath string
+	openStoredDocument = func(path string) error {
+		openedPath = path
+		return nil
+	}
+	status, stdout, stderr := runForTest([]string{"--home", catalogPath, "open", "abcd"}, nil)
+	if status != 0 || stdout != "" || stderr != "" || openedPath != wantPath {
+		t.Fatalf("open: status = %d, stdout = %q, stderr = %q, path = %q, want %q", status, stdout, stderr, openedPath, wantPath)
+	}
+
+	openStoredDocument = func(string) error { return errors.New("viewer failed") }
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "open", paper.ID}, nil)
+	if status != 1 || stdout != "" || !strings.Contains(stderr, "viewer failed") || !strings.Contains(stderr, wantPath) {
+		t.Fatalf("failed open: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+
+	openedPath = ""
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "open", "ffff"}, nil)
+	if status != 1 || stdout != "" || !strings.Contains(stderr, "id not found") || openedPath != "" {
+		t.Fatalf("missing paper: status = %d, stdout = %q, stderr = %q, opened = %q", status, stdout, stderr, openedPath)
+	}
+}
+
 func TestInfoCommandEmptyAndPopulated(t *testing.T) {
 	catalogPath := filepath.Join(t.TempDir(), "catalog")
 	if err := catalog.Initialize(catalogPath, "Mathematics", "Mathematics papers and notes", time.Now()); err != nil {
@@ -862,6 +896,7 @@ func TestCommandHelpDoesNotRequireCatalog(t *testing.T) {
 		{args: []string{"remove", "--help"}, want: []string{"Usage: papersplz remove", "--yes"}},
 		{args: []string{"show", "--help"}, want: []string{"Usage: papersplz show", "--json"}},
 		{args: []string{"path", "--help"}, want: []string{"Usage: papersplz path"}},
+		{args: []string{"open", "--help"}, want: []string{"Usage: papersplz open", "local viewer"}},
 		{args: []string{"list", "--help"}, want: []string{"Usage: papersplz list", "--author", "--sort", "--reverse", "--limit", "--json"}},
 		{args: []string{"info", "--help"}, want: []string{"Usage: papersplz info", "--json"}},
 		{args: []string{"search", "--help"}, want: []string{"Usage: papersplz search", "--tag", "--json"}},

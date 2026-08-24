@@ -93,12 +93,18 @@ pplz list --sort added --reverse
 pplz info
 pplz show PAPER_ID
 pplz edit PAPER_ID --title "Corrected title" --author "Alice Smith"
+pplz open PAPER_ID
 pplz path PAPER_ID
 open "$(pplz path PAPER_ID)"       # macOS
 xdg-open "$(pplz path PAPER_ID)"  # common Unix desktops
 ```
 
 Paper IDs may be replaced by an unambiguous prefix.
+
+`open` launches the catalog-owned document with `open` on macOS or `xdg-open`
+on Linux. On FreeBSD it uses `xdg-open`, falling back to `gio open`. If no
+suitable program is installed or it cannot be launched, papersplz reports the
+stored path so it can be opened manually. Use `path` for scripts.
 
 `list` sorts by title ascending by default. `--sort added` orders oldest first,
 and `--sort author` orders by the complete author list with papers that have no

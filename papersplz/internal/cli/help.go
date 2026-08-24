@@ -42,6 +42,10 @@ Show a paper metadata summary.
 
 Print only the stored document path.
 `
+	openHelp = `Usage: papersplz open PAPER
+
+Open the stored document using the platform's local viewer.
+`
 	listHelp = `Usage: papersplz list [OPTIONS]
 
 List papers in deterministic order. The default is title ascending.
@@ -107,7 +111,7 @@ descending, then tag name ascending.
 
 var topLevelHelp = map[string]string{
 	"init": initHelp, "add": addHelp, "edit": editHelp, "remove": removeHelp,
-	"show": showHelp, "path": pathHelp, "list": listHelp,
+	"show": showHelp, "path": pathHelp, "open": openHelp, "list": listHelp,
 	"info":   infoHelp,
 	"search": searchHelp, "doctor": doctorHelp,
 	"review": reviewHelp, "comment": commentHelp, "tag": tagHelp,

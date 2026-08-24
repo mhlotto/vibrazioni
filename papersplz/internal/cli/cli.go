@@ -26,6 +26,7 @@ Commands:
   remove PAPER    remove a paper
   show PAPER      show a paper summary
   path PAPER      print a paper's stored path
+  open PAPER      open a paper's stored document
   list            list papers
   info            show catalog information
   review          show, set, edit, or remove a review
@@ -37,7 +38,7 @@ Commands:
 `
 
 var catalogCommands = map[string]struct{}{
-	"add": {}, "edit": {}, "remove": {}, "show": {}, "path": {}, "list": {}, "info": {},
+	"add": {}, "edit": {}, "remove": {}, "show": {}, "path": {}, "open": {}, "list": {}, "info": {},
 	"review": {}, "comment": {}, "tag": {}, "tags": {}, "search": {}, "doctor": {},
 }
 
@@ -114,6 +115,8 @@ func run(args []string, stdin io.Reader, interactive bool, stdout, stderr io.Wri
 		return runInfo(catalogHome, commandArgs, stdout, stderr)
 	case "path":
 		return runPath(catalogHome, commandArgs, stdout, stderr)
+	case "open":
+		return runOpen(catalogHome, commandArgs, stdout, stderr)
 	case "tag":
 		return runTag(catalogHome, commandArgs, stdout, stderr)
 	case "tags":
@@ -882,6 +885,24 @@ func runPath(catalogHome string, args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	fmt.Fprintln(stdout, documentPath)
+	return 0
+}
+
+func runOpen(catalogHome string, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 1 {
+		fmt.Fprintln(stderr, "papersplz: open requires one PAPER")
+		return 2
+	}
+	documentPath, err := catalog.DocumentPath(catalogHome, args[0])
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: open: %v\n", err)
+		return 1
+	}
+	if err := openStoredDocument(documentPath); err != nil {
+		fmt.Fprintf(stderr, "papersplz: open: %v\n", err)
+		fmt.Fprintf(stderr, "papersplz: stored paper: %s\n", documentPath)
+		return 1
+	}
 	return 0
 }
 
