@@ -286,6 +286,37 @@ func TestInfoCommandEmptyAndPopulated(t *testing.T) {
 	})
 }
 
+func TestEditCommandUpdatesMetadataWithPrefix(t *testing.T) {
+	catalogPath, paper := removeCLIFixture(t)
+	paper.Source = "Old"
+	paper.SourceURL = "https://old.example/paper"
+	recordPath := filepath.Join(catalogPath, catalog.PapersDirectory, paper.ID, store.RecordFilename)
+	if err := store.WritePaper(recordPath, paper); err != nil {
+		t.Fatal(err)
+	}
+
+	status, stdout, stderr := runForTest([]string{
+		"--home", catalogPath, "edit", "abcd",
+		"--title", "Corrected", "--author", "Bob", "--author", "Carol",
+		"--source", "New Journal", "--source-url", "https://new.example/paper",
+	}, nil)
+	if status != 0 || stderr != "" || !strings.Contains(stdout, paper.ID) {
+		t.Fatalf("status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+	stored, err := store.ReadPaper(recordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Title != "Corrected" || !reflect.DeepEqual(stored.Authors, []string{"Bob", "Carol"}) || stored.Source != "New Journal" || stored.SourceURL != "https://new.example/paper" || stored.ID != paper.ID || !stored.AddedAt.Equal(paper.AddedAt) || !stored.UpdatedAt.After(paper.UpdatedAt) {
+		t.Fatalf("stored paper = %#v", stored)
+	}
+
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "edit", paper.ID}, nil)
+	if status == 0 || stdout != "" || !strings.Contains(stderr, "at least one metadata field") {
+		t.Fatalf("empty edit: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+}
+
 func TestRemoveCommandConfirmation(t *testing.T) {
 	t.Run("non-interactive requires yes", func(t *testing.T) {
 		catalogPath, paper := removeCLIFixture(t)
@@ -748,6 +779,7 @@ func TestCommandHelpDoesNotRequireCatalog(t *testing.T) {
 	}{
 		{args: []string{"init", "--help"}, want: []string{"Usage: papersplz init", "--description"}},
 		{args: []string{"add", "--help"}, want: []string{"Usage: papersplz add", "--title", "--author", "--tag"}},
+		{args: []string{"edit", "--help"}, want: []string{"Usage: papersplz edit", "--title", "--author", "--source-url"}},
 		{args: []string{"remove", "--help"}, want: []string{"Usage: papersplz remove", "--yes"}},
 		{args: []string{"show", "--help"}, want: []string{"Usage: papersplz show", "--json"}},
 		{args: []string{"path", "--help"}, want: []string{"Usage: papersplz path"}},

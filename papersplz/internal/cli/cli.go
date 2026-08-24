@@ -22,6 +22,7 @@ const usage = `Usage: papersplz [--home PATH] COMMAND [ARGUMENTS]
 Commands:
   init PATH       create a catalog
   add SOURCE      add a local or direct-URL paper
+  edit PAPER      edit paper metadata
   remove PAPER    remove a paper
   show PAPER      show a paper summary
   path PAPER      print a paper's stored path
@@ -35,7 +36,7 @@ Commands:
 `
 
 var catalogCommands = map[string]struct{}{
-	"add": {}, "remove": {}, "show": {}, "path": {}, "list": {}, "info": {},
+	"add": {}, "edit": {}, "remove": {}, "show": {}, "path": {}, "list": {}, "info": {},
 	"review": {}, "comment": {}, "tag": {}, "search": {}, "doctor": {},
 }
 
@@ -100,6 +101,8 @@ func run(args []string, stdin io.Reader, interactive bool, stdout, stderr io.Wri
 	switch command {
 	case "add":
 		return runAdd(catalogHome, commandArgs, stdout, stderr)
+	case "edit":
+		return runEdit(catalogHome, commandArgs, stdout, stderr)
 	case "remove":
 		return runRemove(catalogHome, commandArgs, stdin, interactive, stdout, stderr)
 	case "show":
@@ -124,6 +127,48 @@ func run(args []string, stdin io.Reader, interactive bool, stdout, stderr io.Wri
 
 	fmt.Fprintf(stderr, "papersplz: %s is not implemented\n", command)
 	return 1
+}
+
+func runEdit(catalogHome string, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "papersplz: edit requires PAPER")
+		return 2
+	}
+	selector := args[0]
+	flags := flag.NewFlagSet("papersplz edit", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	flags.Usage = func() {}
+	title := flags.String("title", "", "replace paper title")
+	source := flags.String("source", "", "replace bibliographic source")
+	sourceURL := flags.String("source-url", "", "replace source URL")
+	var authors repeatedStrings
+	flags.Var(&authors, "author", "replace authors (repeatable)")
+	if err := flags.Parse(args[1:]); err != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(stderr, "papersplz: edit accepts one PAPER")
+		return 2
+	}
+	set := make(map[string]bool)
+	flags.Visit(func(visited *flag.Flag) { set[visited.Name] = true })
+	options := catalog.EditOptions{Authors: authors, AuthorsSet: set["author"]}
+	if set["title"] {
+		options.Title = title
+	}
+	if set["source"] {
+		options.Source = source
+	}
+	if set["source-url"] {
+		options.SourceURL = sourceURL
+	}
+	paper, err := catalog.EditPaper(catalogHome, selector, options, time.Now().UTC())
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: edit: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "Updated %s %s\n", paper.ID, paper.Title)
+	return 0
 }
 
 func runInfo(catalogHome string, args []string, stdout, stderr io.Writer) int {

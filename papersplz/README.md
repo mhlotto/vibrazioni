@@ -90,6 +90,7 @@ pplz list
 pplz list --tag topology --author alice
 pplz info
 pplz show PAPER_ID
+pplz edit PAPER_ID --title "Corrected title" --author "Alice Smith"
 pplz path PAPER_ID
 open "$(pplz path PAPER_ID)"       # macOS
 xdg-open "$(pplz path PAPER_ID)"  # common Unix desktops

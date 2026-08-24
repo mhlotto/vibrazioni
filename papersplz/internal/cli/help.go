@@ -17,6 +17,16 @@ Options:
   --source TEXT    bibliographic source
   --tag TAG        tag (repeatable)
 `
+	editHelp = `Usage: papersplz edit PAPER [OPTIONS]
+
+Change descriptive paper metadata without replacing the stored document.
+
+Options:
+  --title TITLE       replace paper title
+  --author NAME       replace authors (repeatable)
+  --source TEXT       replace bibliographic source
+  --source-url URL    replace source URL
+`
 	removeHelp = `Usage: papersplz remove PAPER [--yes]
 
 Remove a catalog-owned paper and its metadata.
@@ -88,7 +98,7 @@ Commands:
 )
 
 var topLevelHelp = map[string]string{
-	"init": initHelp, "add": addHelp, "remove": removeHelp,
+	"init": initHelp, "add": addHelp, "edit": editHelp, "remove": removeHelp,
 	"show": showHelp, "path": pathHelp, "list": listHelp,
 	"info":   infoHelp,
 	"search": searchHelp, "doctor": doctorHelp,
