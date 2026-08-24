@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -24,7 +26,7 @@ Commands:
   show PAPER      show a paper summary
   path PAPER      print a paper's stored path
   list            list papers
-  review          manage reviews (not yet implemented)
+  review          show, set, edit, or remove a review
   comment         manage comments (not yet implemented)
   tag             add, remove, or list paper tags
   search          search papers (not yet implemented)
@@ -103,10 +105,206 @@ func run(args []string, stdin io.Reader, interactive bool, stdout, stderr io.Wri
 		return runPath(catalogHome, commandArgs, stdout, stderr)
 	case "tag":
 		return runTag(catalogHome, commandArgs, stdout, stderr)
+	case "review":
+		return runReview(catalogHome, commandArgs, stdin, stdout, stderr, lookupEnv)
 	}
 
 	fmt.Fprintf(stderr, "papersplz: %s is not implemented\n", command)
 	return 1
+}
+
+func runReview(catalogHome string, args []string, stdin io.Reader, stdout, stderr io.Writer, lookupEnv func(string) (string, bool)) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "papersplz: review requires show, set, edit, or remove")
+		return 2
+	}
+	switch args[0] {
+	case "show":
+		return runReviewShow(catalogHome, args[1:], stdout, stderr)
+	case "set":
+		return runReviewSet(catalogHome, args[1:], stdin, stdout, stderr)
+	case "edit":
+		return runReviewEdit(catalogHome, args[1:], stdin, stdout, stderr, lookupEnv)
+	case "remove":
+		return runReviewRemove(catalogHome, args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "papersplz: unknown review command %q\n", args[0])
+		return 2
+	}
+}
+
+func runReviewShow(catalogHome string, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "papersplz: review show requires PAPER")
+		return 2
+	}
+	selector := args[0]
+	flags := flag.NewFlagSet("papersplz review show", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	flags.Usage = func() {}
+	jsonOutput := flags.Bool("json", false, "print JSON")
+	if err := flags.Parse(args[1:]); err != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(stderr, "papersplz: review show accepts one PAPER")
+		return 2
+	}
+	paper, err := catalog.ShowReview(catalogHome, selector)
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: review show: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		output := ReviewOutput{
+			Text:      paper.Review.Text,
+			CreatedAt: paper.Review.CreatedAt,
+			UpdatedAt: paper.Review.UpdatedAt,
+		}
+		if err := writeJSON(stdout, output); err != nil {
+			fmt.Fprintf(stderr, "papersplz: review show: write JSON: %v\n", err)
+			return 1
+		}
+	} else {
+		writeReview(stdout, *paper.Review)
+	}
+	return 0
+}
+
+func runReviewSet(catalogHome string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "papersplz: review set requires PAPER")
+		return 2
+	}
+	selector := args[0]
+	flags := flag.NewFlagSet("papersplz review set", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	flags.Usage = func() {}
+	filePath := flags.String("file", "", "read review text from a file")
+	if err := flags.Parse(args[1:]); err != nil {
+		return 2
+	}
+	positional := flags.Args()
+	if *filePath != "" && len(positional) != 0 {
+		fmt.Fprintln(stderr, "papersplz: review set accepts either TEXT, -, or --file FILE")
+		return 2
+	}
+	if *filePath == "" && len(positional) != 1 {
+		fmt.Fprintln(stderr, "papersplz: review set requires TEXT, -, or --file FILE")
+		return 2
+	}
+	var (
+		text []byte
+		err  error
+	)
+	if *filePath != "" {
+		text, err = os.ReadFile(*filePath)
+		if err != nil {
+			err = fmt.Errorf("read review file: %w", err)
+		}
+	} else if positional[0] == "-" {
+		if stdin == nil {
+			err = errors.New("stdin is unavailable")
+		} else {
+			text, err = io.ReadAll(stdin)
+			if err != nil {
+				err = fmt.Errorf("read review from stdin: %w", err)
+			}
+		}
+	} else {
+		text = []byte(positional[0])
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: review set: %v\n", err)
+		return 1
+	}
+	paper, err := catalog.SetReview(catalogHome, selector, string(text), time.Now().UTC())
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: review set: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "Review set for %s.\n", paper.ID)
+	return 0
+}
+
+func runReviewEdit(catalogHome string, args []string, stdin io.Reader, stdout, stderr io.Writer, lookupEnv func(string) (string, bool)) int {
+	if len(args) != 1 {
+		fmt.Fprintln(stderr, "papersplz: review edit requires one PAPER")
+		return 2
+	}
+	editor, ok := lookupEnv("EDITOR")
+	if !ok || strings.TrimSpace(editor) == "" {
+		fmt.Fprintln(stderr, "papersplz: review edit: EDITOR is not set")
+		return 1
+	}
+	paper, err := catalog.LoadPaper(catalogHome, args[0])
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: review edit: %v\n", err)
+		return 1
+	}
+	temporary, err := os.CreateTemp("", "papersplz-review-*.txt")
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: review edit: create temporary file: %v\n", err)
+		return 1
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if paper.Review != nil {
+		_, err = io.WriteString(temporary, paper.Review.Text)
+	}
+	if closeErr := temporary.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: review edit: prepare temporary file: %v\n", err)
+		return 1
+	}
+	command := exec.Command("sh", "-c", `exec $EDITOR "$1"`, "papersplz-editor", temporaryPath)
+	command.Env = environmentWith(os.Environ(), "EDITOR", editor)
+	command.Stdin = stdin
+	command.Stdout = stdout
+	command.Stderr = stderr
+	if err := command.Run(); err != nil {
+		fmt.Fprintf(stderr, "papersplz: review edit: editor failed: %v\n", err)
+		return 1
+	}
+	text, err := os.ReadFile(filepath.Clean(temporaryPath))
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: review edit: read temporary file: %v\n", err)
+		return 1
+	}
+	paper, err = catalog.SetReview(catalogHome, paper.ID, string(text), time.Now().UTC())
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: review edit: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "Review set for %s.\n", paper.ID)
+	return 0
+}
+
+func environmentWith(environment []string, key, value string) []string {
+	prefix := key + "="
+	result := make([]string, 0, len(environment)+1)
+	for _, entry := range environment {
+		if !strings.HasPrefix(entry, prefix) {
+			result = append(result, entry)
+		}
+	}
+	return append(result, prefix+value)
+}
+
+func runReviewRemove(catalogHome string, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 1 {
+		fmt.Fprintln(stderr, "papersplz: review remove requires one PAPER")
+		return 2
+	}
+	paper, err := catalog.RemoveReview(catalogHome, args[0], time.Now().UTC())
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: review remove: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "Review removed from %s.\n", paper.ID)
+	return 0
 }
 
 func runTag(catalogHome string, args []string, stdout, stderr io.Writer) int {

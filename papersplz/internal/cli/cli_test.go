@@ -34,6 +34,15 @@ func runInteractiveForTest(args []string, input string) (int, string, string) {
 	return status, stdout.String(), stderr.String()
 }
 
+func runWithInputForTest(args []string, input string, env map[string]string) (int, string, string) {
+	var stdout, stderr bytes.Buffer
+	status := run(args, strings.NewReader(input), false, &stdout, &stderr, func(key string) (string, bool) {
+		value, ok := env[key]
+		return value, ok
+	})
+	return status, stdout.String(), stderr.String()
+}
+
 func TestCatalogCommandRequiresHome(t *testing.T) {
 	status, stdout, stderr := runForTest([]string{"list"}, nil)
 	if status == 0 {
@@ -53,9 +62,9 @@ func TestCatalogSourcesAllowDispatch(t *testing.T) {
 		args []string
 		env  map[string]string
 	}{
-		{name: "home flag", args: []string{"--home", "/flag/catalog", "review"}},
-		{name: "environment", args: []string{"review"}, env: map[string]string{"PAPERSPLZ_HOME": "/env/catalog"}},
-		{name: "flag overrides environment", args: []string{"--home", "/flag/catalog", "review"}, env: map[string]string{"PAPERSPLZ_HOME": "/env/catalog"}},
+		{name: "home flag", args: []string{"--home", "/flag/catalog", "comment"}},
+		{name: "environment", args: []string{"comment"}, env: map[string]string{"PAPERSPLZ_HOME": "/env/catalog"}},
+		{name: "flag overrides environment", args: []string{"--home", "/flag/catalog", "comment"}, env: map[string]string{"PAPERSPLZ_HOME": "/env/catalog"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -330,6 +339,117 @@ func TestTagCommands(t *testing.T) {
 	}
 	if string(after) != string(before) {
 		t.Fatal("invalid CLI tag changed record.json")
+	}
+}
+
+func TestReviewCommands(t *testing.T) {
+	catalogPath := filepath.Join(t.TempDir(), "catalog")
+	if err := catalog.Initialize(catalogPath, "Test", "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	paper := cliFixturePaper("abcd000000000000", "Reviewed Paper", nil, nil, time.Now().UTC())
+	writeCLIFixturePaper(t, catalogPath, paper)
+	recordPath := filepath.Join(catalogPath, catalog.PapersDirectory, paper.ID, store.RecordFilename)
+
+	status, stdout, stderr := runForTest([]string{"--home", catalogPath, "review", "set", "abcd", "Direct review"}, nil)
+	if status != 0 || stderr != "" || !strings.Contains(stdout, paper.ID) {
+		t.Fatalf("direct set: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "review", "show", "abcd"}, nil)
+	if status != 0 || stderr != "" || !strings.Contains(stdout, "Text:\nDirect review\n") || !strings.Contains(stdout, "Created:") {
+		t.Fatalf("human show: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "review", "show", "abcd", "--json"}, nil)
+	if status != 0 || stderr != "" {
+		t.Fatalf("JSON show: status = %d, stderr = %q", status, stderr)
+	}
+	var reviewOutput ReviewOutput
+	if err := json.Unmarshal([]byte(stdout), &reviewOutput); err != nil {
+		t.Fatal(err)
+	}
+	if reviewOutput.Text != "Direct review" || reviewOutput.CreatedAt.IsZero() || reviewOutput.UpdatedAt.IsZero() {
+		t.Fatalf("review JSON = %#v", reviewOutput)
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(stdout), &object); err != nil || len(object) != 3 {
+		t.Fatalf("review JSON structure = %v, error = %v", object, err)
+	}
+
+	reviewFile := filepath.Join(t.TempDir(), "review.txt")
+	fileText := "Review from file\nwith another line\n"
+	if err := os.WriteFile(reviewFile, []byte(fileText), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "review", "set", "abcd", "--file", reviewFile}, nil)
+	if status != 0 || stderr != "" {
+		t.Fatalf("file set: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+	stored, err := store.ReadPaper(recordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Review == nil || stored.Review.Text != fileText {
+		t.Fatalf("file review = %#v", stored.Review)
+	}
+
+	stdinText := "Review from stdin\n"
+	status, stdout, stderr = runWithInputForTest([]string{"--home", catalogPath, "review", "set", "abcd", "-"}, stdinText, nil)
+	if status != 0 || stderr != "" {
+		t.Fatalf("stdin set: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+	stored, err = store.ReadPaper(recordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Review == nil || stored.Review.Text != stdinText {
+		t.Fatalf("stdin review = %#v", stored.Review)
+	}
+
+	before, err := os.ReadFile(recordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "review", "edit", "abcd"}, nil)
+	if status == 0 || stdout != "" || !strings.Contains(stderr, "EDITOR is not set") {
+		t.Fatalf("unset editor: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+	after, err := os.ReadFile(recordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("failed edit changed record.json")
+	}
+
+	editorPath := filepath.Join(t.TempDir(), "editor.sh")
+	editorScript := "#!/bin/sh\nprintf '%s\\n' 'Edited review' > \"$1\"\n"
+	if err := os.WriteFile(editorPath, []byte(editorScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	status, stdout, stderr = runWithInputForTest([]string{"--home", catalogPath, "review", "edit", "abcd"}, "", map[string]string{"EDITOR": editorPath})
+	if status != 0 || stderr != "" {
+		t.Fatalf("edit: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+	stored, err = store.ReadPaper(recordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Review == nil || stored.Review.Text != "Edited review\n" {
+		t.Fatalf("edited review = %#v", stored.Review)
+	}
+
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "review", "remove", "abcd"}, nil)
+	if status != 0 || stderr != "" || !strings.Contains(stdout, paper.ID) {
+		t.Fatalf("remove: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+	stored, err = store.ReadPaper(recordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Review != nil {
+		t.Fatalf("review after remove = %#v", stored.Review)
 	}
 }
 

@@ -38,6 +38,12 @@ type TagListOutput struct {
 	Tags    []string `json:"tags"`
 }
 
+type ReviewOutput struct {
+	Text      string    `json:"text"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 func newShowOutput(paper model.Paper) ShowOutput {
 	reviewStatus := "none"
 	if paper.Review != nil {
@@ -117,6 +123,13 @@ func writeTags(writer io.Writer, tags []string) {
 	for _, tag := range tags {
 		fmt.Fprintln(writer, tag)
 	}
+}
+
+func writeReview(writer io.Writer, review model.Review) {
+	fmt.Fprintf(writer, "Created: %s\n", review.CreatedAt.Format(time.RFC3339))
+	fmt.Fprintf(writer, "Updated: %s\n", review.UpdatedAt.Format(time.RFC3339))
+	fmt.Fprintln(writer, "Text:")
+	fmt.Fprintln(writer, review.Text)
 }
 
 func abbreviatedID(id string) string {
