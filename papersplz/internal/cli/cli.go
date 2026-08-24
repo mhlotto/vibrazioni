@@ -27,7 +27,7 @@ Commands:
   path PAPER      print a paper's stored path
   list            list papers
   review          show, set, edit, or remove a review
-  comment         manage comments (not yet implemented)
+  comment         add, list, show, edit, or remove comments
   tag             add, remove, or list paper tags
   search          search papers (not yet implemented)
   doctor          check catalog consistency (not yet implemented)
@@ -107,10 +107,176 @@ func run(args []string, stdin io.Reader, interactive bool, stdout, stderr io.Wri
 		return runTag(catalogHome, commandArgs, stdout, stderr)
 	case "review":
 		return runReview(catalogHome, commandArgs, stdin, stdout, stderr, lookupEnv)
+	case "comment":
+		return runComment(catalogHome, commandArgs, stdin, stdout, stderr, lookupEnv)
 	}
 
 	fmt.Fprintf(stderr, "papersplz: %s is not implemented\n", command)
 	return 1
+}
+
+func runComment(catalogHome string, args []string, stdin io.Reader, stdout, stderr io.Writer, lookupEnv func(string) (string, bool)) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "papersplz: comment requires add, list, show, edit, or remove")
+		return 2
+	}
+	switch args[0] {
+	case "add":
+		if len(args) != 3 {
+			fmt.Fprintln(stderr, "papersplz: comment add requires PAPER and TEXT")
+			return 2
+		}
+		paper, comment, err := catalog.AddComment(catalogHome, args[1], args[2], time.Now().UTC())
+		if err != nil {
+			fmt.Fprintf(stderr, "papersplz: comment add: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "Added comment %s to %s.\n", comment.ID, paper.ID)
+		return 0
+	case "list":
+		return runCommentList(catalogHome, args[1:], stdout, stderr)
+	case "show":
+		return runCommentShow(catalogHome, args[1:], stdout, stderr)
+	case "edit":
+		return runCommentEdit(catalogHome, args[1:], stdin, stdout, stderr, lookupEnv)
+	case "remove":
+		if len(args) != 3 {
+			fmt.Fprintln(stderr, "papersplz: comment remove requires PAPER and COMMENT")
+			return 2
+		}
+		paper, comment, err := catalog.RemoveComment(catalogHome, args[1], args[2], time.Now().UTC())
+		if err != nil {
+			fmt.Fprintf(stderr, "papersplz: comment remove: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "Removed comment %s from %s.\n", comment.ID, paper.ID)
+		return 0
+	default:
+		fmt.Fprintf(stderr, "papersplz: unknown comment command %q\n", args[0])
+		return 2
+	}
+}
+
+func runCommentList(catalogHome string, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "papersplz: comment list requires PAPER")
+		return 2
+	}
+	selector := args[0]
+	flags := flag.NewFlagSet("papersplz comment list", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	flags.Usage = func() {}
+	jsonOutput := flags.Bool("json", false, "print JSON")
+	if err := flags.Parse(args[1:]); err != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(stderr, "papersplz: comment list accepts one PAPER")
+		return 2
+	}
+	_, comments, err := catalog.ListComments(catalogHome, selector)
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: comment list: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := writeJSON(stdout, newCommentListOutput(comments)); err != nil {
+			fmt.Fprintf(stderr, "papersplz: comment list: write JSON: %v\n", err)
+			return 1
+		}
+	} else {
+		writeComments(stdout, comments)
+	}
+	return 0
+}
+
+func runCommentShow(catalogHome string, args []string, stdout, stderr io.Writer) int {
+	if len(args) < 2 {
+		fmt.Fprintln(stderr, "papersplz: comment show requires PAPER and COMMENT")
+		return 2
+	}
+	paperSelector, commentSelector := args[0], args[1]
+	flags := flag.NewFlagSet("papersplz comment show", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	flags.Usage = func() {}
+	jsonOutput := flags.Bool("json", false, "print JSON")
+	if err := flags.Parse(args[2:]); err != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(stderr, "papersplz: comment show accepts PAPER and COMMENT")
+		return 2
+	}
+	_, comment, err := catalog.ShowComment(catalogHome, paperSelector, commentSelector)
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: comment show: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := writeJSON(stdout, newCommentOutput(comment)); err != nil {
+			fmt.Fprintf(stderr, "papersplz: comment show: write JSON: %v\n", err)
+			return 1
+		}
+	} else {
+		writeComment(stdout, comment)
+	}
+	return 0
+}
+
+func runCommentEdit(catalogHome string, args []string, stdin io.Reader, stdout, stderr io.Writer, lookupEnv func(string) (string, bool)) int {
+	if len(args) != 2 {
+		fmt.Fprintln(stderr, "papersplz: comment edit requires PAPER and COMMENT")
+		return 2
+	}
+	editor, ok := lookupEnv("EDITOR")
+	if !ok || strings.TrimSpace(editor) == "" {
+		fmt.Fprintln(stderr, "papersplz: comment edit: EDITOR is not set")
+		return 1
+	}
+	paper, comment, err := catalog.ShowComment(catalogHome, args[0], args[1])
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: comment edit: %v\n", err)
+		return 1
+	}
+	text, err := editText(comment.Text, "papersplz-comment-*.txt", editor, stdin, stdout, stderr)
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: comment edit: %v\n", err)
+		return 1
+	}
+	_, comment, err = catalog.EditComment(catalogHome, paper.ID, comment.ID, text, time.Now().UTC())
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: comment edit: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "Updated comment %s.\n", comment.ID)
+	return 0
+}
+
+func editText(initial, pattern, editor string, stdin io.Reader, stdout, stderr io.Writer) (string, error) {
+	temporary, err := os.CreateTemp("", pattern)
+	if err != nil {
+		return "", fmt.Errorf("create temporary file: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	_, err = io.WriteString(temporary, initial)
+	if closeErr := temporary.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return "", fmt.Errorf("prepare temporary file: %w", err)
+	}
+	command := exec.Command("sh", "-c", `exec $EDITOR "$1"`, "papersplz-editor", temporaryPath)
+	command.Env = environmentWith(os.Environ(), "EDITOR", editor)
+	command.Stdin, command.Stdout, command.Stderr = stdin, stdout, stderr
+	if err := command.Run(); err != nil {
+		return "", fmt.Errorf("editor failed: %w", err)
+	}
+	text, err := os.ReadFile(filepath.Clean(temporaryPath))
+	if err != nil {
+		return "", fmt.Errorf("read temporary file: %w", err)
+	}
+	return string(text), nil
 }
 
 func runReview(catalogHome string, args []string, stdin io.Reader, stdout, stderr io.Writer, lookupEnv func(string) (string, bool)) int {

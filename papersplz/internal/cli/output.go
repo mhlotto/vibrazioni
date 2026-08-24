@@ -44,6 +44,13 @@ type ReviewOutput struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+type CommentOutput struct {
+	ID        string    `json:"id"`
+	Text      string    `json:"text"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 func newShowOutput(paper model.Paper) ShowOutput {
 	reviewStatus := "none"
 	if paper.Review != nil {
@@ -130,6 +137,39 @@ func writeReview(writer io.Writer, review model.Review) {
 	fmt.Fprintf(writer, "Updated: %s\n", review.UpdatedAt.Format(time.RFC3339))
 	fmt.Fprintln(writer, "Text:")
 	fmt.Fprintln(writer, review.Text)
+}
+
+func newCommentOutput(comment model.Comment) CommentOutput {
+	return CommentOutput(comment)
+}
+
+func newCommentListOutput(comments []model.Comment) []CommentOutput {
+	output := make([]CommentOutput, len(comments))
+	for i, comment := range comments {
+		output[i] = newCommentOutput(comment)
+	}
+	return output
+}
+
+func writeComment(writer io.Writer, comment model.Comment) {
+	fmt.Fprintf(writer, "ID: %s\n", comment.ID)
+	fmt.Fprintf(writer, "Created: %s\n", comment.CreatedAt.Format(time.RFC3339))
+	fmt.Fprintf(writer, "Updated: %s\n", comment.UpdatedAt.Format(time.RFC3339))
+	fmt.Fprintln(writer, "Text:")
+	fmt.Fprintln(writer, comment.Text)
+}
+
+func writeComments(writer io.Writer, comments []model.Comment) {
+	if len(comments) == 0 {
+		fmt.Fprintln(writer, "No comments.")
+		return
+	}
+	for i, comment := range comments {
+		if i > 0 {
+			fmt.Fprintln(writer)
+		}
+		writeComment(writer, comment)
+	}
 }
 
 func abbreviatedID(id string) string {

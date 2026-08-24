@@ -62,9 +62,9 @@ func TestCatalogSourcesAllowDispatch(t *testing.T) {
 		args []string
 		env  map[string]string
 	}{
-		{name: "home flag", args: []string{"--home", "/flag/catalog", "comment"}},
-		{name: "environment", args: []string{"comment"}, env: map[string]string{"PAPERSPLZ_HOME": "/env/catalog"}},
-		{name: "flag overrides environment", args: []string{"--home", "/flag/catalog", "comment"}, env: map[string]string{"PAPERSPLZ_HOME": "/env/catalog"}},
+		{name: "home flag", args: []string{"--home", "/flag/catalog", "search"}},
+		{name: "environment", args: []string{"search"}, env: map[string]string{"PAPERSPLZ_HOME": "/env/catalog"}},
+		{name: "flag overrides environment", args: []string{"--home", "/flag/catalog", "search"}, env: map[string]string{"PAPERSPLZ_HOME": "/env/catalog"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -450,6 +450,85 @@ func TestReviewCommands(t *testing.T) {
 	}
 	if stored.Review != nil {
 		t.Fatalf("review after remove = %#v", stored.Review)
+	}
+}
+
+func TestCommentCommands(t *testing.T) {
+	catalogPath, paper := removeCLIFixture(t)
+
+	status, stdout, stderr := runForTest([]string{"--home", catalogPath, "comment", "add", "abcd", "First note"}, nil)
+	if status != 0 || stderr != "" || !strings.Contains(stdout, paper.ID) {
+		t.Fatalf("add first: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+	stored, err := store.ReadPaper(filepath.Join(catalogPath, catalog.PapersDirectory, paper.ID, store.RecordFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored.Comments) != 1 || stored.Comments[0].Text != "First note" {
+		t.Fatalf("comments after add = %#v", stored.Comments)
+	}
+	first := stored.Comments[0]
+
+	status, _, stderr = runForTest([]string{"--home", catalogPath, "comment", "add", paper.ID, "Second note"}, nil)
+	if status != 0 || stderr != "" {
+		t.Fatalf("add second: status = %d, stderr = %q", status, stderr)
+	}
+
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "comment", "list", "abcd", "--json"}, nil)
+	if status != 0 || stderr != "" {
+		t.Fatalf("list JSON: status = %d, stderr = %q", status, stderr)
+	}
+	var listed []CommentOutput
+	if err := json.Unmarshal([]byte(stdout), &listed); err != nil {
+		t.Fatalf("decode list JSON: %v; output = %q", err, stdout)
+	}
+	if len(listed) != 2 || listed[0].ID != first.ID || listed[0].Text != "First note" {
+		t.Fatalf("list JSON = %#v", listed)
+	}
+
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "comment", "show", "abcd", first.ID[:8], "--json"}, nil)
+	if status != 0 || stderr != "" {
+		t.Fatalf("show JSON: status = %d, stderr = %q", status, stderr)
+	}
+	var shown map[string]any
+	if err := json.Unmarshal([]byte(stdout), &shown); err != nil {
+		t.Fatal(err)
+	}
+	if len(shown) != 4 || shown["id"] != first.ID || shown["text"] != "First note" {
+		t.Fatalf("show JSON = %#v", shown)
+	}
+
+	status, _, stderr = runForTest([]string{"--home", catalogPath, "comment", "edit", "abcd", first.ID[:8]}, nil)
+	if status == 0 || !strings.Contains(stderr, "EDITOR is not set") {
+		t.Fatalf("edit without editor: status = %d, stderr = %q", status, stderr)
+	}
+	editorPath := filepath.Join(t.TempDir(), "editor.sh")
+	if err := os.WriteFile(editorPath, []byte("#!/bin/sh\nprintf 'Edited note\\n' > \"$1\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	status, stdout, stderr = runWithInputForTest([]string{"--home", catalogPath, "comment", "edit", "abcd", first.ID[:8]}, "", map[string]string{"EDITOR": editorPath})
+	if status != 0 || stderr != "" || !strings.Contains(stdout, first.ID) {
+		t.Fatalf("edit: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+	stored, err = store.ReadPaper(filepath.Join(catalogPath, catalog.PapersDirectory, paper.ID, store.RecordFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Comments[0].Text != "Edited note\n" || !stored.Comments[0].CreatedAt.Equal(first.CreatedAt) || !stored.Comments[0].UpdatedAt.After(first.UpdatedAt) {
+		t.Fatalf("edited comment = %#v", stored.Comments[0])
+	}
+	secondID := stored.Comments[1].ID
+
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "comment", "remove", "abcd", first.ID[:8]}, nil)
+	if status != 0 || stderr != "" || !strings.Contains(stdout, first.ID) {
+		t.Fatalf("remove: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+	stored, err = store.ReadPaper(filepath.Join(catalogPath, catalog.PapersDirectory, paper.ID, store.RecordFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored.Comments) != 1 || stored.Comments[0].ID != secondID {
+		t.Fatalf("comments after remove = %#v", stored.Comments)
 	}
 }
 
