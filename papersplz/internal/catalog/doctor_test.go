@@ -123,6 +123,49 @@ func TestDoctorReportsUnsupportedCatalogSchema(t *testing.T) {
 	}
 }
 
+func TestDoctorReportsKnownTemporaryArtifactsWithoutRemovingThem(t *testing.T) {
+	catalogPath := newTestCatalog(t)
+	paper := doctorPaper("aaaa00000000", "Clean", []byte("clean document"))
+	writeDoctorPaper(t, catalogPath, paper)
+	artifacts := []string{
+		filepath.Join(catalogPath, ".papersplz-import-stale"),
+		filepath.Join(catalogPath, ".papersplz-123.tmp"),
+		filepath.Join(catalogPath, PapersDirectory, paper.ID, ".papersplz-456.tmp"),
+	}
+	if err := os.Mkdir(artifacts[0], 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range artifacts[1:] {
+		if err := os.WriteFile(path, []byte("partial"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	unknownHidden := filepath.Join(catalogPath, ".user-note")
+	if err := os.WriteFile(unknownHidden, []byte("leave me alone"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	before := snapshotDoctorTree(t, catalogPath)
+	problems := Doctor(catalogPath)
+	joined := doctorProblemText(problems)
+	for _, wanted := range []string{
+		".papersplz-import-stale: abandoned papersplz import staging artifact",
+		".papersplz-123.tmp: abandoned papersplz temporary metadata artifact",
+		filepath.Join(PapersDirectory, paper.ID, ".papersplz-456.tmp") + ": abandoned papersplz temporary metadata artifact",
+	} {
+		if !strings.Contains(joined, wanted) {
+			t.Errorf("Doctor() output missing %q:\n%s", wanted, joined)
+		}
+	}
+	if strings.Contains(joined, ".user-note") {
+		t.Fatalf("Doctor() classified unrelated hidden file:\n%s", joined)
+	}
+	after := snapshotDoctorTree(t, catalogPath)
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("doctor mutated temporary state\nbefore: %#v\nafter: %#v", before, after)
+	}
+}
+
 func doctorPaper(id, title string, document []byte) model.Paper {
 	timestamp := time.Date(2026, 8, 24, 15, 31, 0, 0, time.UTC)
 	digest := sha256.Sum256(document)

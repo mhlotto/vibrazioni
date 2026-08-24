@@ -45,6 +45,7 @@ func Doctor(catalogPath string) []DoctorProblem {
 	} else if err := model.ValidateCatalog(metadata); err != nil {
 		problems = append(problems, DoctorProblem{Path: store.CatalogFilename, Message: err.Error()})
 	}
+	problems = append(problems, inspectDoctorRootTemporaries(catalogPath)...)
 
 	papersPath := filepath.Join(catalogPath, PapersDirectory)
 	entries, err := os.ReadDir(papersPath)
@@ -148,13 +149,46 @@ func inspectDoctorDirectory(papersPath, directory, documentName string) []Doctor
 	problems := make([]DoctorProblem, 0)
 	for _, entry := range entries {
 		if entry.Name() != store.RecordFilename && entry.Name() != documentName {
+			message := "unexpected entry in paper directory"
+			if temporaryArtifactKind(entry.Name()) == "temporary metadata" {
+				message = "abandoned papersplz temporary metadata artifact"
+			}
 			problems = append(problems, DoctorProblem{
 				Path:    filepath.Join(PapersDirectory, directory, entry.Name()),
-				Message: "unexpected entry in paper directory",
+				Message: message,
 			})
 		}
 	}
 	return problems
+}
+
+func inspectDoctorRootTemporaries(catalogPath string) []DoctorProblem {
+	entries, err := os.ReadDir(catalogPath)
+	if err != nil {
+		return nil
+	}
+	problems := make([]DoctorProblem, 0)
+	for _, entry := range entries {
+		kind := temporaryArtifactKind(entry.Name())
+		if kind == "" {
+			continue
+		}
+		problems = append(problems, DoctorProblem{
+			Path:    entry.Name(),
+			Message: fmt.Sprintf("abandoned papersplz %s artifact", kind),
+		})
+	}
+	return problems
+}
+
+func temporaryArtifactKind(name string) string {
+	if strings.HasPrefix(name, ".papersplz-import-") {
+		return "import staging"
+	}
+	if strings.HasPrefix(name, ".papersplz-") && strings.HasSuffix(name, ".tmp") {
+		return "temporary metadata"
+	}
+	return ""
 }
 
 func duplicateDoctorProblems(records []doctorRecord) []DoctorProblem {

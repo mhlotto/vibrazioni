@@ -70,6 +70,10 @@ func run(args []string, stdin io.Reader, interactive bool, stdout, stderr io.Wri
 
 	command := remaining[0]
 	commandArgs := remaining[1:]
+	if commandUsage, ok := commandHelp(command, commandArgs); ok {
+		fmt.Fprint(stdout, commandUsage)
+		return 0
+	}
 	switch command {
 	case "help":
 		if len(commandArgs) != 0 {

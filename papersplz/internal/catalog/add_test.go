@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -281,6 +282,58 @@ func TestHTTPFailuresLeaveNoCompletePaper(t *testing.T) {
 			}
 			assertNoImportStages(t, catalogPath)
 		})
+	}
+}
+
+func TestHTTPDownloadTimeoutCleansStagingData(t *testing.T) {
+	catalogPath := newTestCatalog(t)
+	started := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.WriteHeader(http.StatusOK)
+		if flusher, ok := response.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		close(started)
+		<-request.Context().Done()
+	}))
+	defer server.Close()
+	client := server.Client()
+	client.Timeout = 50 * time.Millisecond
+
+	_, err := AddWithHTTPClient(catalogPath, server.URL+"/stalled.pdf", AddOptions{Title: "Stalled"}, time.Now(), client)
+	if err == nil {
+		t.Fatal("AddWithHTTPClient() succeeded for stalled response")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) && !strings.Contains(strings.ToLower(err.Error()), "timeout") {
+		t.Fatalf("timeout error = %v", err)
+	}
+	select {
+	case <-started:
+	default:
+		t.Fatal("server response did not start")
+	}
+	entries, readErr := os.ReadDir(filepath.Join(catalogPath, PapersDirectory))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("timed out download left paper directories: %v", entryNames(entries))
+	}
+	assertNoImportStages(t, catalogPath)
+}
+
+func TestDownloadHTTPClientAppliesDefaultWithoutMutatingCaller(t *testing.T) {
+	caller := &http.Client{}
+	got := downloadHTTPClient(caller)
+	if got == caller || got.Timeout != RemoteDownloadTimeout {
+		t.Fatalf("downloadHTTPClient() = %#v", got)
+	}
+	if caller.Timeout != 0 {
+		t.Fatalf("caller timeout changed to %v", caller.Timeout)
+	}
+	short := &http.Client{Timeout: time.Second}
+	if got := downloadHTTPClient(short); got != short {
+		t.Fatal("client with finite timeout was replaced")
 	}
 }
 

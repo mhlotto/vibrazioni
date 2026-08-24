@@ -691,3 +691,38 @@ func TestHelpUsesStdout(t *testing.T) {
 		}
 	}
 }
+
+func TestCommandHelpDoesNotRequireCatalog(t *testing.T) {
+	tests := []struct {
+		args []string
+		want []string
+	}{
+		{args: []string{"init", "--help"}, want: []string{"Usage: papersplz init", "--description"}},
+		{args: []string{"add", "--help"}, want: []string{"Usage: papersplz add", "--title", "--author", "--tag"}},
+		{args: []string{"remove", "--help"}, want: []string{"Usage: papersplz remove", "--yes"}},
+		{args: []string{"show", "--help"}, want: []string{"Usage: papersplz show", "--json"}},
+		{args: []string{"path", "--help"}, want: []string{"Usage: papersplz path"}},
+		{args: []string{"list", "--help"}, want: []string{"Usage: papersplz list", "--author", "--json"}},
+		{args: []string{"search", "--help"}, want: []string{"Usage: papersplz search", "--tag", "--json"}},
+		{args: []string{"doctor", "--help"}, want: []string{"Usage: papersplz doctor"}},
+		{args: []string{"review", "--help"}, want: []string{"Usage: papersplz review", "show PAPER", "set PAPER"}},
+		{args: []string{"comment", "-h"}, want: []string{"Usage: papersplz comment", "add PAPER", "edit PAPER"}},
+		{args: []string{"tag", "--help"}, want: []string{"Usage: papersplz tag", "add PAPER", "list PAPER"}},
+		{args: []string{"review", "show", "--help"}, want: []string{"Usage: papersplz review show", "--json"}},
+		{args: []string{"comment", "show", "--help"}, want: []string{"Usage: papersplz comment show", "--json"}},
+		{args: []string{"tag", "list", "--help"}, want: []string{"Usage: papersplz tag list", "--json"}},
+	}
+	for _, tt := range tests {
+		t.Run(strings.Join(tt.args, "_"), func(t *testing.T) {
+			status, stdout, stderr := runForTest(tt.args, nil)
+			if status != 0 || stderr != "" {
+				t.Fatalf("status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+			}
+			for _, wanted := range tt.want {
+				if !strings.Contains(stdout, wanted) {
+					t.Errorf("stdout = %q, want %q", stdout, wanted)
+				}
+			}
+		})
+	}
+}

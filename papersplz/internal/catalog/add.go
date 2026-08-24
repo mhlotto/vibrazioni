@@ -22,6 +22,12 @@ import (
 
 var ErrDuplicateContent = errors.New("duplicate paper content")
 
+// RemoteDownloadTimeout is the overall limit for an HTTP or HTTPS import,
+// including reading the response body.
+const RemoteDownloadTimeout = 5 * time.Minute
+
+var defaultDownloadHTTPClient = &http.Client{Timeout: RemoteDownloadTimeout}
+
 type DuplicateContentError struct {
 	PaperID string
 }
@@ -43,20 +49,31 @@ var extensionPattern = regexp.MustCompile(`^[a-z0-9]{1,16}$`)
 
 // Add imports a local document or a direct HTTP or HTTPS URL.
 func Add(catalogPath, source string, options AddOptions, addedAt time.Time) (model.Paper, error) {
-	return AddWithHTTPClient(catalogPath, source, options, addedAt, http.DefaultClient)
+	return AddWithHTTPClient(catalogPath, source, options, addedAt, defaultDownloadHTTPClient)
 }
 
 // AddWithHTTPClient is Add with an explicit client for controlled callers and
-// tests. A nil client uses http.DefaultClient.
+// tests. A nil client uses the default finite download timeout. A supplied
+// client without a timeout is copied and given that same timeout.
 func AddWithHTTPClient(catalogPath, source string, options AddOptions, addedAt time.Time, client *http.Client) (model.Paper, error) {
 	parsed, isURL := directDocumentURL(source)
 	if !isURL {
 		return AddLocal(catalogPath, source, options, addedAt)
 	}
-	if client == nil {
-		client = http.DefaultClient
-	}
+	client = downloadHTTPClient(client)
 	return addURL(catalogPath, source, parsed, options, addedAt, client)
+}
+
+func downloadHTTPClient(client *http.Client) *http.Client {
+	if client == nil {
+		return defaultDownloadHTTPClient
+	}
+	if client.Timeout > 0 {
+		return client
+	}
+	copy := *client
+	copy.Timeout = RemoteDownloadTimeout
+	return &copy
 }
 
 // AddLocal copies a local document into a newly staged paper directory.
