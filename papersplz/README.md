@@ -106,6 +106,14 @@ on Linux. On FreeBSD it uses `xdg-open`, falling back to `gio open`. If no
 suitable program is installed or it cannot be launched, papersplz reports the
 stored path so it can be opened manually. Use `path` for scripts.
 
+Export all catalog-managed metadata as portable JSON (document contents are
+not embedded):
+
+```sh
+pplz export > catalog-export.json
+pplz export --json
+```
+
 `list` sorts by title ascending by default. `--sort added` orders oldest first,
 and `--sort author` orders by the complete author list with papers that have no
 authors last. `--reverse` reverses the selected deterministic order. Equal
@@ -163,8 +171,8 @@ Search performs a linear metadata scan and creates no index.
 
 ## JSON output
 
-Structured output is available for `info`, `list`, `show`, `search`, `tags`,
-`review show`, `comment list`, `comment show`, and `tag list`:
+Structured output is available for `export`, `info`, `list`, `show`, `search`,
+`tags`, `review show`, `comment list`, `comment show`, and `tag list`:
 
 ```sh
 pplz info --json

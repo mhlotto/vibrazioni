@@ -76,6 +76,11 @@ Options:
 
 Check catalog consistency without modifying it.
 `
+	exportHelp = `Usage: papersplz export [--json]
+
+Export catalog metadata and all paper records as JSON. JSON is the default
+format; stored document contents are not included.
+`
 	reviewHelp = `Usage: papersplz review COMMAND [ARGUMENTS]
 
 Commands:
@@ -113,7 +118,7 @@ var topLevelHelp = map[string]string{
 	"init": initHelp, "add": addHelp, "edit": editHelp, "remove": removeHelp,
 	"show": showHelp, "path": pathHelp, "open": openHelp, "list": listHelp,
 	"info":   infoHelp,
-	"search": searchHelp, "doctor": doctorHelp,
+	"search": searchHelp, "export": exportHelp, "doctor": doctorHelp,
 	"review": reviewHelp, "comment": commentHelp, "tag": tagHelp,
 	"tags": tagsHelp,
 }

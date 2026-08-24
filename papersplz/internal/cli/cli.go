@@ -34,12 +34,13 @@ Commands:
   tag             add, remove, or list paper tags
   tags            list catalog-wide tag usage
   search          search paper metadata
+  export          export catalog metadata as JSON
   doctor          check catalog consistency
 `
 
 var catalogCommands = map[string]struct{}{
 	"add": {}, "edit": {}, "remove": {}, "show": {}, "path": {}, "open": {}, "list": {}, "info": {},
-	"review": {}, "comment": {}, "tag": {}, "tags": {}, "search": {}, "doctor": {},
+	"review": {}, "comment": {}, "tag": {}, "tags": {}, "search": {}, "export": {}, "doctor": {},
 }
 
 // Run executes the command-line interface and returns a process exit status.
@@ -127,12 +128,38 @@ func run(args []string, stdin io.Reader, interactive bool, stdout, stderr io.Wri
 		return runComment(catalogHome, commandArgs, stdin, stdout, stderr, lookupEnv)
 	case "search":
 		return runSearch(catalogHome, commandArgs, stdout, stderr)
+	case "export":
+		return runExport(catalogHome, commandArgs, stdout, stderr)
 	case "doctor":
 		return runDoctor(catalogHome, commandArgs, stdout, stderr)
 	}
 
 	fmt.Fprintf(stderr, "papersplz: %s is not implemented\n", command)
 	return 1
+}
+
+func runExport(catalogHome string, args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("papersplz export", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	flags.Usage = func() {}
+	flags.Bool("json", false, "export JSON (the default format)")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(stderr, "papersplz: export does not accept arguments")
+		return 2
+	}
+	export, err := catalog.ExportMetadata(catalogHome)
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: export: %v\n", err)
+		return 1
+	}
+	if err := writeJSON(stdout, newExportOutput(export)); err != nil {
+		fmt.Fprintf(stderr, "papersplz: export: write JSON: %v\n", err)
+		return 1
+	}
+	return 0
 }
 
 func runTags(catalogHome string, args []string, stdout, stderr io.Writer) int {

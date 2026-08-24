@@ -72,6 +72,11 @@ type CommentOutput struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+type ExportOutput struct {
+	Catalog model.Catalog `json:"catalog"`
+	Papers  []model.Paper `json:"papers"`
+}
+
 func newInfoOutput(info catalog.Info) InfoOutput {
 	return InfoOutput{
 		Name:        info.Metadata.Name,
@@ -81,6 +86,14 @@ func newInfoOutput(info catalog.Info) InfoOutput {
 		TagCount:    info.TagCount,
 		LastAdded:   info.LastAdded,
 	}
+}
+
+func newExportOutput(export catalog.MetadataExport) ExportOutput {
+	papers := export.Papers
+	if papers == nil {
+		papers = []model.Paper{}
+	}
+	return ExportOutput{Catalog: export.Catalog, Papers: papers}
 }
 
 func writeInfo(writer io.Writer, info catalog.Info) {

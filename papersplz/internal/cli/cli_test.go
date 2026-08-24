@@ -346,6 +346,52 @@ func TestInfoCommandEmptyAndPopulated(t *testing.T) {
 	})
 }
 
+func TestExportCommand(t *testing.T) {
+	catalogPath := filepath.Join(t.TempDir(), "catalog")
+	created := time.Date(2026, 8, 24, 15, 30, 0, 0, time.UTC)
+	if err := catalog.Initialize(catalogPath, "Mathematics", "Papers and notes", created); err != nil {
+		t.Fatal(err)
+	}
+
+	status, emptyJSON, stderr := runForTest([]string{"--home", catalogPath, "export"}, nil)
+	if status != 0 || stderr != "" {
+		t.Fatalf("empty export: status = %d, stderr = %q", status, stderr)
+	}
+	var empty ExportOutput
+	if err := json.Unmarshal([]byte(emptyJSON), &empty); err != nil {
+		t.Fatalf("decode empty export: %v; output = %q", err, emptyJSON)
+	}
+	if empty.Catalog.Name != "Mathematics" || empty.Papers == nil || len(empty.Papers) != 0 {
+		t.Fatalf("empty export = %#v", empty)
+	}
+
+	paper := cliFixturePaper("abcd000000000000", "A Paper", []string{"Alice", "Bob"}, []string{"math"}, created.Add(time.Minute))
+	paper.Source = "Journal"
+	paper.SourceURL = "https://example.org/paper.pdf"
+	paper.Review = &model.Review{Text: "Review text", CreatedAt: created, UpdatedAt: created}
+	paper.Comments = []model.Comment{{ID: "eeee0000", Text: "Comment text", CreatedAt: created, UpdatedAt: created}}
+	writeCLIFixturePaper(t, catalogPath, paper)
+
+	status, stdout, stderr := runForTest([]string{"export", "--json"}, map[string]string{"PAPERSPLZ_HOME": catalogPath})
+	if status != 0 || stderr != "" {
+		t.Fatalf("populated export: status = %d, stderr = %q", status, stderr)
+	}
+	var output ExportOutput
+	if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+		t.Fatalf("decode populated export: %v; output = %q", err, stdout)
+	}
+	if output.Catalog.SchemaVersion != model.SchemaVersion || output.Catalog.Description != "Papers and notes" || len(output.Papers) != 1 {
+		t.Fatalf("export = %#v", output)
+	}
+	got := output.Papers[0]
+	if !reflect.DeepEqual(got, paper) {
+		t.Fatalf("exported paper = %#v, want %#v", got, paper)
+	}
+	if strings.Contains(stdout, "document") {
+		t.Fatalf("export embedded document contents: %q", stdout)
+	}
+}
+
 func TestEditCommandUpdatesMetadataWithPrefix(t *testing.T) {
 	catalogPath, paper := removeCLIFixture(t)
 	paper.Source = "Old"
@@ -900,6 +946,7 @@ func TestCommandHelpDoesNotRequireCatalog(t *testing.T) {
 		{args: []string{"list", "--help"}, want: []string{"Usage: papersplz list", "--author", "--sort", "--reverse", "--limit", "--json"}},
 		{args: []string{"info", "--help"}, want: []string{"Usage: papersplz info", "--json"}},
 		{args: []string{"search", "--help"}, want: []string{"Usage: papersplz search", "--tag", "--json"}},
+		{args: []string{"export", "--help"}, want: []string{"Usage: papersplz export", "--json", "not included"}},
 		{args: []string{"doctor", "--help"}, want: []string{"Usage: papersplz doctor"}},
 		{args: []string{"review", "--help"}, want: []string{"Usage: papersplz review", "show PAPER", "set PAPER"}},
 		{args: []string{"comment", "-h"}, want: []string{"Usage: papersplz comment", "add PAPER", "edit PAPER"}},
