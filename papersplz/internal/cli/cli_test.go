@@ -2,11 +2,16 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/mhlotto/vibrazioni/papersplz/internal/catalog"
+	"github.com/mhlotto/vibrazioni/papersplz/internal/model"
 	"github.com/mhlotto/vibrazioni/papersplz/internal/store"
 )
 
@@ -39,9 +44,9 @@ func TestCatalogSourcesAllowDispatch(t *testing.T) {
 		args []string
 		env  map[string]string
 	}{
-		{name: "home flag", args: []string{"--home", "/flag/catalog", "list"}},
-		{name: "environment", args: []string{"list"}, env: map[string]string{"PAPERSPLZ_HOME": "/env/catalog"}},
-		{name: "flag overrides environment", args: []string{"--home", "/flag/catalog", "list"}, env: map[string]string{"PAPERSPLZ_HOME": "/env/catalog"}},
+		{name: "home flag", args: []string{"--home", "/flag/catalog", "remove"}},
+		{name: "environment", args: []string{"remove"}, env: map[string]string{"PAPERSPLZ_HOME": "/env/catalog"}},
+		{name: "flag overrides environment", args: []string{"--home", "/flag/catalog", "remove"}, env: map[string]string{"PAPERSPLZ_HOME": "/env/catalog"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -112,6 +117,138 @@ func TestAddLocalCommand(t *testing.T) {
 	}
 	if strings.Join(paper.Authors, ",") != "Alice,Bob" || strings.Join(paper.Tags, ",") != "math,to-read" {
 		t.Fatalf("paper metadata = %#v", paper)
+	}
+}
+
+func TestShowListAndPathCommands(t *testing.T) {
+	catalogPath := filepath.Join(t.TempDir(), "catalog")
+	if err := catalog.Initialize(catalogPath, "Test", "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	created := time.Date(2026, 8, 24, 15, 31, 0, 0, time.UTC)
+	papers := []model.Paper{
+		cliFixturePaper("aaaa000000000000", "Zoo", []string{"Carol"}, []string{"physics"}, created),
+		cliFixturePaper("bbbb000000000000", "alpha", []string{"Alice Smith"}, []string{"math"}, created),
+		cliFixturePaper("cccc000000000000", "Beta", []string{"Bob", "Alice Cooper"}, []string{"math", "topology"}, created),
+	}
+	papers[1].Source = "Journal"
+	papers[1].SourceURL = "https://example.org/alpha.pdf"
+	papers[1].Review = &model.Review{Text: "Reviewed", CreatedAt: created, UpdatedAt: created}
+	papers[1].Comments = []model.Comment{{ID: "dddd0000", Text: "Note", CreatedAt: created, UpdatedAt: created}}
+	for _, paper := range papers {
+		writeCLIFixturePaper(t, catalogPath, paper)
+	}
+
+	t.Run("show human with prefix", func(t *testing.T) {
+		status, stdout, stderr := runForTest([]string{"--home", catalogPath, "show", "bbbb"}, nil)
+		if status != 0 || stderr != "" {
+			t.Fatalf("status = %d, stderr = %q", status, stderr)
+		}
+		for _, expected := range []string{
+			"ID: bbbb000000000000", "Title: alpha", "Authors: Alice Smith",
+			"Source: Journal", "Source URL: https://example.org/alpha.pdf",
+			"Tags: math", "Added: 2026-08-24T15:31:00Z", "Updated: 2026-08-24T15:31:00Z",
+			"Stored filename: paper.pdf", "Original filename: alpha.pdf",
+			"File size: 8 bytes", "Review: present", "Comments: 1",
+		} {
+			if !strings.Contains(stdout, expected) {
+				t.Fatalf("show output missing %q:\n%s", expected, stdout)
+			}
+		}
+	})
+
+	t.Run("show json structure", func(t *testing.T) {
+		status, stdout, stderr := runForTest([]string{"--home", catalogPath, "show", "bbbb", "--json"}, nil)
+		if status != 0 || stderr != "" {
+			t.Fatalf("status = %d, stderr = %q", status, stderr)
+		}
+		var output ShowOutput
+		if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+			t.Fatal(err)
+		}
+		if output.ID != papers[1].ID || output.ReviewStatus != "present" || output.CommentCount != 1 {
+			t.Fatalf("show JSON = %#v", output)
+		}
+		var object map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(stdout), &object); err != nil {
+			t.Fatal(err)
+		}
+		if len(object) != 13 {
+			t.Fatalf("show JSON keys = %v", object)
+		}
+	})
+
+	t.Run("list human deterministic order", func(t *testing.T) {
+		status, stdout, stderr := runForTest([]string{"--home", catalogPath, "list"}, nil)
+		if status != 0 || stderr != "" {
+			t.Fatalf("status = %d, stderr = %q", status, stderr)
+		}
+		alpha, beta, zoo := strings.Index(stdout, "alpha"), strings.Index(stdout, "Beta"), strings.Index(stdout, "Zoo")
+		if alpha < 0 || !(alpha < beta && beta < zoo) {
+			t.Fatalf("list is not in title order:\n%s", stdout)
+		}
+		if !strings.Contains(stdout, "bbbb0000") || strings.Contains(stdout, papers[1].ID) {
+			t.Fatalf("list does not use concise IDs:\n%s", stdout)
+		}
+	})
+
+	t.Run("list json and filters", func(t *testing.T) {
+		status, stdout, stderr := runForTest([]string{"--home", catalogPath, "list", "--tag", "MATH", "--author", "alice", "--json"}, nil)
+		if status != 0 || stderr != "" {
+			t.Fatalf("status = %d, stderr = %q", status, stderr)
+		}
+		var output []ListOutput
+		if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+			t.Fatal(err)
+		}
+		want := []ListOutput{
+			{ID: papers[1].ID, Title: "alpha", Authors: []string{"Alice Smith"}},
+			{ID: papers[2].ID, Title: "Beta", Authors: []string{"Bob", "Alice Cooper"}},
+		}
+		if !reflect.DeepEqual(output, want) {
+			t.Fatalf("list JSON = %#v, want %#v", output, want)
+		}
+	})
+
+	t.Run("path only prints document path", func(t *testing.T) {
+		status, stdout, stderr := runForTest([]string{"--home", catalogPath, "path", "bbbb"}, nil)
+		want := filepath.Join(catalogPath, catalog.PapersDirectory, papers[1].ID, papers[1].File.Name) + "\n"
+		if status != 0 || stderr != "" || stdout != want {
+			t.Fatalf("status = %d, stdout = %q, stderr = %q, want %q", status, stdout, stderr, want)
+		}
+	})
+}
+
+func cliFixturePaper(id, title string, authors, tags []string, timestamp time.Time) model.Paper {
+	return model.Paper{
+		SchemaVersion: model.SchemaVersion,
+		ID:            id,
+		Title:         title,
+		Authors:       authors,
+		AddedAt:       timestamp,
+		UpdatedAt:     timestamp,
+		File: model.File{
+			Name:         "paper.pdf",
+			OriginalName: title + ".pdf",
+			Size:         8,
+			SHA256:       strings.Repeat("a", 64),
+		},
+		Tags:     tags,
+		Comments: []model.Comment{},
+	}
+}
+
+func writeCLIFixturePaper(t *testing.T, catalogPath string, paper model.Paper) {
+	t.Helper()
+	directory := filepath.Join(catalogPath, catalog.PapersDirectory, paper.ID)
+	if err := os.Mkdir(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, paper.File.Name), []byte("document"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WritePaper(filepath.Join(directory, store.RecordFilename), paper); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -5,7 +5,8 @@ and related documents. The v1 design is documented in `V1.md`.
 
 The CLI recognizes the planned v1 commands and resolves a catalog from
 `--home PATH` or `PAPERSPLZ_HOME`. Catalog initialization and document import
-from local files or direct HTTP/HTTPS URLs are implemented. Other catalog
+from local files or direct HTTP/HTTPS URLs are implemented. Catalog inspection
+is available through `show`, `list`, and `path`. Other catalog
 operations are not yet implemented.
 
 ```sh
@@ -14,4 +15,6 @@ go run ./cmd/papersplz init /path/to/catalog --name "My Papers"
 go run ./cmd/papersplz --home /path/to/catalog add paper.pdf --title "A Paper"
 go run ./cmd/papersplz --home /path/to/catalog add https://example.org/paper.pdf --title "A Remote Paper"
 go run ./cmd/papersplz --home /path/to/catalog list
+go run ./cmd/papersplz --home /path/to/catalog show PAPER_ID --json
+go run ./cmd/papersplz --home /path/to/catalog path PAPER_ID
 ```

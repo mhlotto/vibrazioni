@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -98,6 +99,9 @@ func validateSchema(version int) error {
 func validateFile(file File) error {
 	if file.Name == "" {
 		return errors.New("file name is required")
+	}
+	if file.Name == "." || file.Name == ".." || filepath.Base(file.Name) != file.Name || strings.Contains(file.Name, `\`) {
+		return errors.New("file name must not contain a directory path")
 	}
 	if file.OriginalName == "" {
 		return errors.New("file original_name is required")

@@ -74,6 +74,7 @@ func TestValidatePaper(t *testing.T) {
 		{name: "missing title", mutate: func(p *Paper) { p.Title = "" }, want: "title"},
 		{name: "invalid id", mutate: func(p *Paper) { p.ID = "NOT-HEX" }, want: "id"},
 		{name: "missing filename", mutate: func(p *Paper) { p.File.Name = "" }, want: "file name"},
+		{name: "unsafe filename", mutate: func(p *Paper) { p.File.Name = "../paper.pdf" }, want: "directory path"},
 		{name: "negative size", mutate: func(p *Paper) { p.File.Size = -1 }, want: "size"},
 		{name: "invalid digest", mutate: func(p *Paper) { p.File.SHA256 = "abc" }, want: "sha256"},
 		{name: "invalid tag", mutate: func(p *Paper) { p.Tags = []string{"Has Spaces"} }, want: "tag"},

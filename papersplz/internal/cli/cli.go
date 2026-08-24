@@ -18,9 +18,9 @@ Commands:
   init PATH       create a catalog
   add SOURCE      add a local or direct-URL paper
   remove          remove a paper (not yet implemented)
-  show            show a paper (not yet implemented)
-  path            print a paper's stored path (not yet implemented)
-  list            list papers (not yet implemented)
+  show PAPER      show a paper summary
+  path PAPER      print a paper's stored path
+  list            list papers
   review          manage reviews (not yet implemented)
   comment         manage comments (not yet implemented)
   tag             manage tags (not yet implemented)
@@ -77,12 +77,97 @@ func Run(args []string, stdout, stderr io.Writer, lookupEnv func(string) (string
 		fmt.Fprintf(stderr, "papersplz: %v\n", err)
 		return 1
 	}
-	if command == "add" {
+	switch command {
+	case "add":
 		return runAdd(catalogHome, commandArgs, stdout, stderr)
+	case "show":
+		return runShow(catalogHome, commandArgs, stdout, stderr)
+	case "list":
+		return runList(catalogHome, commandArgs, stdout, stderr)
+	case "path":
+		return runPath(catalogHome, commandArgs, stdout, stderr)
 	}
 
 	fmt.Fprintf(stderr, "papersplz: %s is not implemented\n", command)
 	return 1
+}
+
+func runShow(catalogHome string, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "papersplz: show requires PAPER")
+		return 2
+	}
+	selector := args[0]
+	flags := flag.NewFlagSet("papersplz show", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	flags.Usage = func() {}
+	jsonOutput := flags.Bool("json", false, "print JSON")
+	if err := flags.Parse(args[1:]); err != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(stderr, "papersplz: show accepts one PAPER")
+		return 2
+	}
+	paper, err := catalog.LoadPaper(catalogHome, selector)
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: show: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := writeJSON(stdout, newShowOutput(paper)); err != nil {
+			fmt.Fprintf(stderr, "papersplz: show: write JSON: %v\n", err)
+			return 1
+		}
+	} else {
+		writeShow(stdout, paper)
+	}
+	return 0
+}
+
+func runList(catalogHome string, args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("papersplz list", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	flags.Usage = func() {}
+	tag := flags.String("tag", "", "filter by tag")
+	author := flags.String("author", "", "filter by author text")
+	jsonOutput := flags.Bool("json", false, "print JSON")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(stderr, "papersplz: list does not accept arguments")
+		return 2
+	}
+	papers, err := catalog.ListPapers(catalogHome, catalog.ListOptions{Tag: *tag, Author: *author})
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: list: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := writeJSON(stdout, newListOutput(papers)); err != nil {
+			fmt.Fprintf(stderr, "papersplz: list: write JSON: %v\n", err)
+			return 1
+		}
+	} else if err := writeList(stdout, papers); err != nil {
+		fmt.Fprintf(stderr, "papersplz: list: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runPath(catalogHome string, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 1 {
+		fmt.Fprintln(stderr, "papersplz: path requires one PAPER")
+		return 2
+	}
+	documentPath, err := catalog.DocumentPath(catalogHome, args[0])
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: path: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(stdout, documentPath)
+	return 0
 }
 
 type repeatedStrings []string
