@@ -45,6 +45,13 @@ func ListPapers(catalogPath string, options ListOptions) ([]model.Paper, error) 
 		return nil, fmt.Errorf("read papers directory: %w", err)
 	}
 	tag := strings.ToLower(strings.TrimSpace(options.Tag))
+	if tag != "" {
+		var err error
+		tag, err = model.NormalizeTag(tag)
+		if err != nil {
+			return nil, err
+		}
+	}
 	author := strings.ToLower(strings.TrimSpace(options.Author))
 	papers := make([]model.Paper, 0, len(entries))
 	for _, entry := range entries {

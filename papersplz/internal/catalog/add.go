@@ -204,15 +204,9 @@ func normalizeOptions(options *AddOptions) error {
 			return fmt.Errorf("author %d is empty", i)
 		}
 	}
-	normalizedTags := make([]string, 0, len(options.Tags))
-	seen := make(map[string]struct{}, len(options.Tags))
-	for _, tag := range options.Tags {
-		tag = strings.ToLower(strings.TrimSpace(tag))
-		if _, exists := seen[tag]; exists {
-			continue
-		}
-		seen[tag] = struct{}{}
-		normalizedTags = append(normalizedTags, tag)
+	normalizedTags, err := model.NormalizeTags(options.Tags)
+	if err != nil {
+		return err
 	}
 	options.Tags = normalizedTags
 	return nil

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mhlotto/vibrazioni/papersplz/internal/catalog"
+	"github.com/mhlotto/vibrazioni/papersplz/internal/model"
 )
 
 const usage = `Usage: papersplz [--home PATH] COMMAND [ARGUMENTS]
@@ -25,7 +26,7 @@ Commands:
   list            list papers
   review          manage reviews (not yet implemented)
   comment         manage comments (not yet implemented)
-  tag             manage tags (not yet implemented)
+  tag             add, remove, or list paper tags
   search          search papers (not yet implemented)
   doctor          check catalog consistency (not yet implemented)
 `
@@ -100,10 +101,76 @@ func run(args []string, stdin io.Reader, interactive bool, stdout, stderr io.Wri
 		return runList(catalogHome, commandArgs, stdout, stderr)
 	case "path":
 		return runPath(catalogHome, commandArgs, stdout, stderr)
+	case "tag":
+		return runTag(catalogHome, commandArgs, stdout, stderr)
 	}
 
 	fmt.Fprintf(stderr, "papersplz: %s is not implemented\n", command)
 	return 1
+}
+
+func runTag(catalogHome string, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "papersplz: tag requires add, remove, or list")
+		return 2
+	}
+	switch args[0] {
+	case "add", "remove":
+		if len(args) < 3 {
+			fmt.Fprintf(stderr, "papersplz: tag %s requires PAPER and at least one TAG\n", args[0])
+			return 2
+		}
+		var (
+			paper model.Paper
+			err   error
+		)
+		if args[0] == "add" {
+			paper, err = catalog.AddTags(catalogHome, args[1], args[2:], time.Now().UTC())
+		} else {
+			paper, err = catalog.RemoveTags(catalogHome, args[1], args[2:], time.Now().UTC())
+		}
+		if err != nil {
+			fmt.Fprintf(stderr, "papersplz: tag %s: %v\n", args[0], err)
+			return 1
+		}
+		writeTags(stdout, paper.Tags)
+		return 0
+	case "list":
+		if len(args) < 2 {
+			fmt.Fprintln(stderr, "papersplz: tag list requires PAPER")
+			return 2
+		}
+		selector := args[1]
+		flags := flag.NewFlagSet("papersplz tag list", flag.ContinueOnError)
+		flags.SetOutput(stderr)
+		flags.Usage = func() {}
+		jsonOutput := flags.Bool("json", false, "print JSON")
+		if err := flags.Parse(args[2:]); err != nil {
+			return 2
+		}
+		if flags.NArg() != 0 {
+			fmt.Fprintln(stderr, "papersplz: tag list accepts one PAPER")
+			return 2
+		}
+		paper, err := catalog.ListTags(catalogHome, selector)
+		if err != nil {
+			fmt.Fprintf(stderr, "papersplz: tag list: %v\n", err)
+			return 1
+		}
+		if *jsonOutput {
+			output := TagListOutput{PaperID: paper.ID, Tags: nonNilStrings(paper.Tags)}
+			if err := writeJSON(stdout, output); err != nil {
+				fmt.Fprintf(stderr, "papersplz: tag list: write JSON: %v\n", err)
+				return 1
+			}
+		} else {
+			writeTags(stdout, paper.Tags)
+		}
+		return 0
+	default:
+		fmt.Fprintf(stderr, "papersplz: unknown tag command %q\n", args[0])
+		return 2
+	}
 }
 
 func runRemove(catalogHome string, args []string, stdin io.Reader, interactive bool, stdout, stderr io.Writer) int {

@@ -274,6 +274,65 @@ func TestRemoveCommandConfirmation(t *testing.T) {
 	})
 }
 
+func TestTagCommands(t *testing.T) {
+	catalogPath := filepath.Join(t.TempDir(), "catalog")
+	if err := catalog.Initialize(catalogPath, "Test", "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	paper := cliFixturePaper("abcd000000000000", "Tagged Paper", nil, []string{"math"}, time.Now().UTC())
+	writeCLIFixturePaper(t, catalogPath, paper)
+
+	status, stdout, stderr := runForTest([]string{
+		"--home", catalogPath, "tag", "add", "abcd", " Topology ", "MATH", "qft+notes",
+	}, nil)
+	if status != 0 || stderr != "" || stdout != "math\ntopology\nqft+notes\n" {
+		t.Fatalf("tag add: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "tag", "list", "abcd"}, nil)
+	if status != 0 || stderr != "" || stdout != "math\ntopology\nqft+notes\n" {
+		t.Fatalf("tag list: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "tag", "list", "abcd", "--json"}, nil)
+	if status != 0 || stderr != "" {
+		t.Fatalf("tag list JSON: status = %d, stderr = %q", status, stderr)
+	}
+	var output TagListOutput
+	if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+		t.Fatal(err)
+	}
+	want := TagListOutput{PaperID: paper.ID, Tags: []string{"math", "topology", "qft+notes"}}
+	if !reflect.DeepEqual(output, want) {
+		t.Fatalf("tag list JSON = %#v, want %#v", output, want)
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(stdout), &object); err != nil || len(object) != 2 {
+		t.Fatalf("tag list JSON structure = %v, error = %v", object, err)
+	}
+
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "tag", "remove", "abcd", "MATH", "missing"}, nil)
+	if status != 0 || stderr != "" || stdout != "topology\nqft+notes\n" {
+		t.Fatalf("tag remove: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+
+	before, err := os.ReadFile(filepath.Join(catalogPath, catalog.PapersDirectory, paper.ID, store.RecordFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "tag", "add", "abcd", "bad tag"}, nil)
+	if status == 0 || stdout != "" || !strings.Contains(stderr, "invalid tag") {
+		t.Fatalf("invalid tag: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+	after, err := os.ReadFile(filepath.Join(catalogPath, catalog.PapersDirectory, paper.ID, store.RecordFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("invalid CLI tag changed record.json")
+	}
+}
+
 func removeCLIFixture(t *testing.T) (string, model.Paper) {
 	t.Helper()
 	catalogPath := filepath.Join(t.TempDir(), "catalog")

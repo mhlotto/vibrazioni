@@ -15,7 +15,6 @@ var ErrUnsupportedSchema = errors.New("unsupported schema version")
 
 var (
 	sha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	tagPattern    = regexp.MustCompile(`^[a-z0-9][a-z0-9._+-]*$`)
 )
 
 func ValidateCatalog(c Catalog) error {
@@ -60,8 +59,12 @@ func ValidatePaper(p Paper) error {
 	}
 	seenTags := make(map[string]struct{}, len(p.Tags))
 	for _, tag := range p.Tags {
-		if !tagPattern.MatchString(tag) {
-			return fmt.Errorf("invalid tag %q", tag)
+		normalized, err := NormalizeTag(tag)
+		if err != nil {
+			return err
+		}
+		if normalized != tag {
+			return fmt.Errorf("stored tag %q is not normalized", tag)
 		}
 		if _, exists := seenTags[tag]; exists {
 			return fmt.Errorf("duplicate tag %q", tag)

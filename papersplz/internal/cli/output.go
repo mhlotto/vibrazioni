@@ -33,6 +33,11 @@ type ListOutput struct {
 	Authors []string `json:"authors"`
 }
 
+type TagListOutput struct {
+	PaperID string   `json:"paper_id"`
+	Tags    []string `json:"tags"`
+}
+
 func newShowOutput(paper model.Paper) ShowOutput {
 	reviewStatus := "none"
 	if paper.Review != nil {
@@ -102,6 +107,16 @@ func writeList(writer io.Writer, papers []model.Paper) error {
 		}
 	}
 	return table.Flush()
+}
+
+func writeTags(writer io.Writer, tags []string) {
+	if len(tags) == 0 {
+		fmt.Fprintln(writer, "No tags.")
+		return
+	}
+	for _, tag := range tags {
+		fmt.Fprintln(writer, tag)
+	}
 }
 
 func abbreviatedID(id string) string {
