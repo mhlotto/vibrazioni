@@ -172,8 +172,12 @@ func addFromReader(catalogPath, papersPath string, source io.Reader, originalNam
 		return model.Paper{}, err
 	}
 	timestamp := addedAt.UTC()
+	metadata, err := store.ReadCatalog(filepath.Join(catalogPath, store.CatalogFilename))
+	if err != nil {
+		return model.Paper{}, fmt.Errorf("read catalog before writing paper: %w", err)
+	}
 	paper := model.Paper{
-		SchemaVersion: model.SchemaVersion,
+		SchemaVersion: paperSchemaForCatalog(metadata.SchemaVersion),
 		ID:            id,
 		Title:         options.Title,
 		Authors:       options.Authors,

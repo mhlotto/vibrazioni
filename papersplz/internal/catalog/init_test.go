@@ -38,7 +38,7 @@ func TestInitializeCreatesCatalogLayout(t *testing.T) {
 		t.Fatalf("ReadCatalog() error = %v", err)
 	}
 	want := model.Catalog{
-		SchemaVersion: model.SchemaVersion,
+		SchemaVersion: model.CurrentCatalogSchemaVersion,
 		Name:          "Mathematics",
 		Description:   "Papers and notes",
 		CreatedAt:     createdAt.UTC(),

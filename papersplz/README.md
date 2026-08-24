@@ -1,3 +1,5 @@
+![papersplz logo](assets/papersplz-logo.png)
+
 # papersplz
 
 `papersplz` is a local-first CLI for cataloging academic papers and related
@@ -93,6 +95,7 @@ pplz list --sort added --reverse
 pplz info
 pplz show PAPER_ID
 pplz edit PAPER_ID --title "Corrected title" --author "Alice Smith"
+pplz edit PAPER_ID --clear-authors
 pplz open PAPER_ID
 pplz path PAPER_ID
 open "$(pplz path PAPER_ID)"       # macOS
@@ -100,6 +103,9 @@ xdg-open "$(pplz path PAPER_ID)"  # common Unix desktops
 ```
 
 Paper IDs may be replaced by an unambiguous prefix.
+
+`edit` changes only the supplied metadata fields. Use `--clear-authors` to
+remove every author; it cannot be combined with `--author`.
 
 `open` launches the catalog-owned document with `open` on macOS or `xdg-open`
 on Linux. On FreeBSD it uses `xdg-open`, falling back to `gio open`. If no
@@ -163,9 +169,7 @@ pplz tag add PAPER_ID reading
 pplz list --tag reading
 ```
 
-These remain ordinary, user-managed tags rather than a separate schema field.
-See [READING_STATUS.md](READING_STATUS.md) for the recommended workflow and the
-criteria for reconsidering first-class status metadata.
+These are ordinary, user-managed tags rather than a separate status field.
 
 ## Paper relationships
 
@@ -180,8 +184,12 @@ pplz relation remove PAPER_ID cites OTHER_PAPER_ID
 ```
 
 Inverse views such as `cited-by` and `superseded-by` are derived automatically.
-See [RELATIONSHIPS.md](RELATIONSHIPS.md) for storage, direction, inverse, and
-paper-removal semantics.
+Supported types are `related-to`, `cites`, `cited-by`, `supersedes`, and
+`superseded-by`. `related-to` is symmetric; the other types form the indicated
+directional inverse pairs. Only one direction is stored and the inverse view is
+derived. Removing a paper removes references to it. Relationship support uses
+catalog and paper schema version 2; adding the first relationship safely
+upgrades an existing schema-version-1 catalog.
 
 ## Search
 

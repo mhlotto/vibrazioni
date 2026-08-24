@@ -3,12 +3,10 @@ package catalog
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
 	"sort"
 	"time"
 
 	"github.com/mhlotto/vibrazioni/papersplz/internal/model"
-	"github.com/mhlotto/vibrazioni/papersplz/internal/store"
 )
 
 type TagUsage struct {
@@ -113,8 +111,7 @@ func requireTags(tags []string) ([]string, error) {
 
 func writeTags(catalogPath string, paper model.Paper, updatedAt time.Time) (model.Paper, error) {
 	paper.UpdatedAt = updatedAt.UTC()
-	path := filepath.Join(catalogPath, PapersDirectory, paper.ID, store.RecordFilename)
-	if err := store.WritePaper(path, paper); err != nil {
+	if err := writePaperRecord(catalogPath, &paper); err != nil {
 		return model.Paper{}, fmt.Errorf("write paper tags: %w", err)
 	}
 	return paper, nil

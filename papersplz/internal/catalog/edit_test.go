@@ -88,6 +88,15 @@ func TestEditPaperPartialEditAndExplicitClearing(t *testing.T) {
 	if updated.Source != "" || updated.SourceURL != "" || updated.Title != title || !reflect.DeepEqual(updated.Authors, paper.Authors) {
 		t.Fatalf("clearing edit = %#v", updated)
 	}
+
+	clearedAt := updated.UpdatedAt.Add(time.Hour)
+	updated, err = EditPaper(catalogPath, paper.ID, EditOptions{Authors: []string{}, AuthorsSet: true}, clearedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Authors == nil || len(updated.Authors) != 0 || updated.Title != title || updated.Source != "" || updated.SourceURL != "" || !updated.UpdatedAt.Equal(clearedAt) {
+		t.Fatalf("clear authors edit = %#v", updated)
+	}
 }
 
 func TestEditPaperRejectsMissingInvalidAndAmbiguousSelection(t *testing.T) {

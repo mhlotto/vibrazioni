@@ -40,7 +40,7 @@ func RemovePaper(catalogPath, selector string) (model.Paper, error) {
 			candidateUpdatedAt = candidate.UpdatedAt.Add(time.Nanosecond)
 		}
 		candidate.UpdatedAt = candidateUpdatedAt
-		if err := writePaperRecord(catalogPath, candidate); err != nil {
+		if err := writePaperRecord(catalogPath, &candidate); err != nil {
 			return model.Paper{}, fmt.Errorf("remove inbound relationship from %s: %w", candidate.ID, err)
 		}
 	}

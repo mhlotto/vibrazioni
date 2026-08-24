@@ -1,7 +1,9 @@
 package store
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -15,7 +17,7 @@ import (
 
 func testCatalog() model.Catalog {
 	return model.Catalog{
-		SchemaVersion: model.SchemaVersion,
+		SchemaVersion: model.CurrentCatalogSchemaVersion,
 		Name:          "Mathematics",
 		Description:   "Papers and notes",
 		CreatedAt:     time.Date(2026, 8, 24, 15, 30, 0, 0, time.UTC),
@@ -25,7 +27,7 @@ func testCatalog() model.Catalog {
 func testPaper() model.Paper {
 	timestamp := time.Date(2026, 8, 24, 15, 31, 0, 0, time.UTC)
 	return model.Paper{
-		SchemaVersion: model.SchemaVersion,
+		SchemaVersion: model.CurrentPaperSchemaVersion,
 		ID:            "a81f32c991b7",
 		Title:         "Some Interesting Paper",
 		Authors:       []string{"Alice Smith", "Bob Jones"},
@@ -77,6 +79,42 @@ func TestPaperRoundTrip(t *testing.T) {
 	assertReadableJSON(t, path)
 }
 
+func TestReadsSchemaVersionOneAndTwo(t *testing.T) {
+	directory := t.TempDir()
+	for _, version := range []int{model.CatalogSchemaVersion1, model.CatalogSchemaVersion2} {
+		catalog := testCatalog()
+		catalog.SchemaVersion = version
+		path := filepath.Join(directory, fmt.Sprintf("catalog-%d.json", version))
+		if err := WriteCatalog(path, catalog); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := ReadCatalog(path); err != nil || got.SchemaVersion != version {
+			t.Fatalf("ReadCatalog(v%d) = %#v, %v", version, got, err)
+		}
+	}
+	for _, version := range []int{model.PaperSchemaVersion1, model.PaperSchemaVersion2} {
+		paper := testPaper()
+		paper.SchemaVersion = version
+		path := filepath.Join(directory, fmt.Sprintf("paper-%d.json", version))
+		if err := WritePaper(path, paper); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := ReadPaper(path); err != nil || got.SchemaVersion != version {
+			t.Fatalf("ReadPaper(v%d) = %#v, %v", version, got, err)
+		}
+	}
+}
+
+func TestWriteRejectsSchemaVersionOneRelationships(t *testing.T) {
+	path := filepath.Join(t.TempDir(), RecordFilename)
+	paper := testPaper()
+	paper.SchemaVersion = model.PaperSchemaVersion1
+	paper.Relationships = []model.Relationship{{Type: model.RelationshipCites, PaperID: "bbbb0000"}}
+	if err := WritePaper(path, paper); err == nil || !strings.Contains(err.Error(), "schema version 1 cannot store relationships") {
+		t.Fatalf("WritePaper() error = %v", err)
+	}
+}
+
 func TestReadRejectsMalformedAndStructurallyInvalidJSON(t *testing.T) {
 	directory := t.TempDir()
 	tests := []struct {
@@ -109,7 +147,7 @@ func TestUnsupportedSchemaDoesNotReplaceExistingFile(t *testing.T) {
 	}
 
 	catalog := testCatalog()
-	catalog.SchemaVersion = model.SchemaVersion + 1
+	catalog.SchemaVersion = model.CurrentCatalogSchemaVersion + 1
 	err := WriteCatalog(path, catalog)
 	if !errors.Is(err, model.ErrUnsupportedSchema) {
 		t.Fatalf("WriteCatalog() error = %v, want ErrUnsupportedSchema", err)
@@ -125,13 +163,29 @@ func TestUnsupportedSchemaDoesNotReplaceExistingFile(t *testing.T) {
 
 func TestReadRejectsUnsupportedSchema(t *testing.T) {
 	path := filepath.Join(t.TempDir(), CatalogFilename)
-	data := `{"schema_version":2,"name":"Future","created_at":"2026-08-24T15:30:00Z"}`
+	data := `{"schema_version":3,"name":"Future","created_at":"2026-08-24T15:30:00Z"}`
 	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	_, err := ReadCatalog(path)
 	if !errors.Is(err, model.ErrUnsupportedSchema) {
 		t.Fatalf("ReadCatalog() error = %v, want ErrUnsupportedSchema", err)
+	}
+}
+
+func TestReadRejectsUnsupportedPaperSchema(t *testing.T) {
+	path := filepath.Join(t.TempDir(), RecordFilename)
+	paper := testPaper()
+	paper.SchemaVersion = model.CurrentPaperSchemaVersion + 1
+	encoded, err := json.Marshal(paper)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, encoded, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadPaper(path); !errors.Is(err, model.ErrUnsupportedSchema) {
+		t.Fatalf("ReadPaper() error = %v, want ErrUnsupportedSchema", err)
 	}
 }
 

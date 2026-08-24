@@ -273,6 +273,7 @@ func runEdit(catalogHome string, args []string, stdout, stderr io.Writer) int {
 	title := flags.String("title", "", "replace paper title")
 	source := flags.String("source", "", "replace bibliographic source")
 	sourceURL := flags.String("source-url", "", "replace source URL")
+	clearAuthors := flags.Bool("clear-authors", false, "remove all authors")
 	var authors repeatedStrings
 	flags.Var(&authors, "author", "replace authors (repeatable)")
 	if err := flags.Parse(args[1:]); err != nil {
@@ -284,7 +285,11 @@ func runEdit(catalogHome string, args []string, stdout, stderr io.Writer) int {
 	}
 	set := make(map[string]bool)
 	flags.Visit(func(visited *flag.Flag) { set[visited.Name] = true })
-	options := catalog.EditOptions{Authors: authors, AuthorsSet: set["author"]}
+	if *clearAuthors && set["author"] {
+		fmt.Fprintln(stderr, "papersplz: edit: --clear-authors cannot be combined with --author")
+		return 2
+	}
+	options := catalog.EditOptions{Authors: authors, AuthorsSet: set["author"] || *clearAuthors}
 	if set["title"] {
 		options.Title = title
 	}

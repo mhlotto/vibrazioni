@@ -50,6 +50,9 @@ func WritePaper(path string, paper model.Paper) error {
 	if err := model.ValidatePaper(paper); err != nil {
 		return fmt.Errorf("validate paper: %w", err)
 	}
+	if paper.SchemaVersion == model.PaperSchemaVersion1 && len(paper.Relationships) != 0 {
+		return errors.New("validate paper: schema version 1 cannot store relationships")
+	}
 	return writeJSONAtomic(path, paper)
 }
 

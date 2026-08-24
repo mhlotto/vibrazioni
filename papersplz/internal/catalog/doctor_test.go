@@ -44,7 +44,7 @@ func TestDoctorReportsMultipleIndependentProblems(t *testing.T) {
 	}
 
 	second := doctorPaper("abcd0000", "Second", []byte("duplicate bytes"))
-	second.SchemaVersion = 2
+	second.SchemaVersion = 3
 	writeDoctorPaperRaw(t, catalogPath, "bbbb0000", second, []byte("duplicate bytes"))
 
 	badReview := doctorPaper("cccc0000", "Bad Review", []byte("review"))
@@ -111,10 +111,52 @@ func TestDoctorReportsDanglingRelationship(t *testing.T) {
 	}
 }
 
+func TestDoctorReportsRelationshipSchemaInconsistencies(t *testing.T) {
+	t.Run("schema one relationship record", func(t *testing.T) {
+		catalogPath := newTestCatalog(t)
+		first := doctorPaper("aaaa00000000", "First", []byte("first"))
+		second := doctorPaper("bbbb00000000", "Second", []byte("second"))
+		writeDoctorPaper(t, catalogPath, first)
+		writeDoctorPaper(t, catalogPath, second)
+		setPaperSchema(t, catalogPath, first.ID, model.PaperSchemaVersion1)
+		setPaperSchema(t, catalogPath, second.ID, model.PaperSchemaVersion1)
+		setCatalogSchema(t, catalogPath, model.CatalogSchemaVersion1)
+		first.SchemaVersion = model.PaperSchemaVersion1
+		first.Relationships = []model.Relationship{{Type: model.RelationshipCites, PaperID: second.ID}}
+		writeRawPaper(t, catalogPath, first)
+		joined := doctorProblemText(Doctor(catalogPath))
+		if !strings.Contains(joined, "schema version 1 record contains relationship metadata") {
+			t.Fatalf("Doctor() output = %s", joined)
+		}
+	})
+
+	t.Run("paper two under catalog one", func(t *testing.T) {
+		catalogPath := newTestCatalog(t)
+		paper := doctorPaper("aaaa00000000", "Paper", []byte("paper"))
+		writeDoctorPaper(t, catalogPath, paper)
+		setCatalogSchema(t, catalogPath, model.CatalogSchemaVersion1)
+		joined := doctorProblemText(Doctor(catalogPath))
+		if !strings.Contains(joined, "paper schema version 2 is incompatible with catalog schema version 1") {
+			t.Fatalf("Doctor() output = %s", joined)
+		}
+	})
+
+	t.Run("paper one under catalog two", func(t *testing.T) {
+		catalogPath := newTestCatalog(t)
+		paper := doctorPaper("aaaa00000000", "Paper", []byte("paper"))
+		writeDoctorPaper(t, catalogPath, paper)
+		setPaperSchema(t, catalogPath, paper.ID, model.PaperSchemaVersion1)
+		joined := doctorProblemText(Doctor(catalogPath))
+		if !strings.Contains(joined, "paper schema version 1 is pending upgrade in schema version 2 catalog") {
+			t.Fatalf("Doctor() output = %s", joined)
+		}
+	})
+}
+
 func TestDoctorReportsUnsupportedCatalogSchema(t *testing.T) {
 	path := t.TempDir()
 	metadata := model.Catalog{
-		SchemaVersion: 2,
+		SchemaVersion: 3,
 		Name:          "Future",
 		CreatedAt:     time.Date(2026, 8, 24, 15, 31, 0, 0, time.UTC),
 	}
@@ -129,7 +171,7 @@ func TestDoctorReportsUnsupportedCatalogSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	problems := Doctor(path)
-	if len(problems) != 1 || !strings.Contains(problems[0].String(), "unsupported schema version: 2") {
+	if len(problems) != 1 || !strings.Contains(problems[0].String(), "unsupported schema version: 3") {
 		t.Fatalf("Doctor() problems = %v", problems)
 	}
 }
@@ -181,7 +223,7 @@ func doctorPaper(id, title string, document []byte) model.Paper {
 	timestamp := time.Date(2026, 8, 24, 15, 31, 0, 0, time.UTC)
 	digest := sha256.Sum256(document)
 	return model.Paper{
-		SchemaVersion: model.SchemaVersion,
+		SchemaVersion: model.CurrentPaperSchemaVersion,
 		ID:            id,
 		Title:         title,
 		Authors:       []string{},

@@ -24,6 +24,7 @@ Change descriptive paper metadata without replacing the stored document.
 Options:
   --title TITLE       replace paper title
   --author NAME       replace authors (repeatable)
+  --clear-authors     remove all authors (cannot combine with --author)
   --source TEXT       replace bibliographic source
   --source-url URL    replace source URL
 `

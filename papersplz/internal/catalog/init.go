@@ -35,7 +35,7 @@ func Initialize(path, name, description string, createdAt time.Time) error {
 	}
 
 	metadata := model.Catalog{
-		SchemaVersion: model.SchemaVersion,
+		SchemaVersion: model.CurrentCatalogSchemaVersion,
 		Name:          name,
 		Description:   description,
 		CreatedAt:     createdAt.UTC(),

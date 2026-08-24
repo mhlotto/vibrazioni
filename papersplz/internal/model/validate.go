@@ -26,7 +26,7 @@ const (
 )
 
 func ValidateCatalog(c Catalog) error {
-	if err := validateSchema(c.SchemaVersion); err != nil {
+	if err := validateCatalogSchema(c.SchemaVersion); err != nil {
 		return err
 	}
 	if strings.TrimSpace(c.Name) == "" {
@@ -39,7 +39,7 @@ func ValidateCatalog(c Catalog) error {
 }
 
 func ValidatePaper(p Paper) error {
-	if err := validateSchema(p.SchemaVersion); err != nil {
+	if err := validatePaperSchema(p.SchemaVersion); err != nil {
 		return err
 	}
 	if !identity.Valid(p.ID) {
@@ -130,11 +130,21 @@ func ValidateRelationshipType(relationshipType string) error {
 	return nil
 }
 
-func validateSchema(version int) error {
+func validateCatalogSchema(version int) error {
 	if version == 0 {
 		return errors.New("schema_version is required")
 	}
-	if version != SchemaVersion {
+	if version != CatalogSchemaVersion1 && version != CatalogSchemaVersion2 {
+		return fmt.Errorf("%w: %d", ErrUnsupportedSchema, version)
+	}
+	return nil
+}
+
+func validatePaperSchema(version int) error {
+	if version == 0 {
+		return errors.New("schema_version is required")
+	}
+	if version != PaperSchemaVersion1 && version != PaperSchemaVersion2 {
 		return fmt.Errorf("%w: %d", ErrUnsupportedSchema, version)
 	}
 	return nil

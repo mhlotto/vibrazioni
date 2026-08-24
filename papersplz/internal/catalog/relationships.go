@@ -3,13 +3,11 @@ package catalog
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/mhlotto/vibrazioni/papersplz/internal/model"
-	"github.com/mhlotto/vibrazioni/papersplz/internal/store"
 )
 
 type ListedRelationship struct {
@@ -27,6 +25,11 @@ func NormalizeRelationshipType(value string) (string, error) {
 }
 
 func AddRelationship(catalogPath, paperSelector, relationshipType, otherSelector string, updatedAt time.Time) (model.Paper, error) {
+	var err error
+	relationshipType, err = NormalizeRelationshipType(relationshipType)
+	if err != nil {
+		return model.Paper{}, err
+	}
 	paper, err := LoadPaper(catalogPath, paperSelector)
 	if err != nil {
 		return model.Paper{}, err
@@ -38,7 +41,14 @@ func AddRelationship(catalogPath, paperSelector, relationshipType, otherSelector
 	if paper.ID == other.ID {
 		return model.Paper{}, errors.New("a paper cannot relate to itself")
 	}
-	relationshipType, err = NormalizeRelationshipType(relationshipType)
+	if err := EnsureRelationshipSchema(catalogPath); err != nil {
+		return model.Paper{}, err
+	}
+	paper, err = LoadPaper(catalogPath, paper.ID)
+	if err != nil {
+		return model.Paper{}, err
+	}
+	other, err = LoadPaper(catalogPath, other.ID)
 	if err != nil {
 		return model.Paper{}, err
 	}
@@ -54,7 +64,7 @@ func AddRelationship(catalogPath, paperSelector, relationshipType, otherSelector
 	paper.Relationships = append(paper.Relationships, model.Relationship{Type: relationshipType, PaperID: other.ID})
 	sortRelationships(paper.Relationships)
 	paper.UpdatedAt = updatedAt.UTC()
-	if err := writePaperRecord(catalogPath, paper); err != nil {
+	if err := writePaperRecord(catalogPath, &paper); err != nil {
 		return model.Paper{}, err
 	}
 	return paper, nil
@@ -103,6 +113,11 @@ func ListRelationships(catalogPath, paperSelector string) ([]ListedRelationship,
 }
 
 func RemoveRelationship(catalogPath, paperSelector, relationshipType, otherSelector string, updatedAt time.Time) (model.Paper, error) {
+	var err error
+	relationshipType, err = NormalizeRelationshipType(relationshipType)
+	if err != nil {
+		return model.Paper{}, err
+	}
 	paper, err := LoadPaper(catalogPath, paperSelector)
 	if err != nil {
 		return model.Paper{}, err
@@ -111,20 +126,27 @@ func RemoveRelationship(catalogPath, paperSelector, relationshipType, otherSelec
 	if err != nil {
 		return model.Paper{}, fmt.Errorf("resolve related paper: %w", err)
 	}
-	relationshipType, err = NormalizeRelationshipType(relationshipType)
+	if err := EnsureRelationshipSchema(catalogPath); err != nil {
+		return model.Paper{}, err
+	}
+	paper, err = LoadPaper(catalogPath, paper.ID)
+	if err != nil {
+		return model.Paper{}, err
+	}
+	other, err = LoadPaper(catalogPath, other.ID)
 	if err != nil {
 		return model.Paper{}, err
 	}
 	if removeStoredRelationship(&paper, relationshipType, other.ID) {
 		paper.UpdatedAt = updatedAt.UTC()
-		if err := writePaperRecord(catalogPath, paper); err != nil {
+		if err := writePaperRecord(catalogPath, &paper); err != nil {
 			return model.Paper{}, err
 		}
 		return paper, nil
 	}
 	if removeStoredRelationship(&other, inverseRelationshipType(relationshipType), paper.ID) {
 		other.UpdatedAt = updatedAt.UTC()
-		if err := writePaperRecord(catalogPath, other); err != nil {
+		if err := writePaperRecord(catalogPath, &other); err != nil {
 			return model.Paper{}, err
 		}
 		return paper, nil
@@ -164,12 +186,4 @@ func sortRelationships(relationships []model.Relationship) {
 		}
 		return relationships[i].PaperID < relationships[j].PaperID
 	})
-}
-
-func writePaperRecord(catalogPath string, paper model.Paper) error {
-	path := filepath.Join(catalogPath, PapersDirectory, paper.ID, store.RecordFilename)
-	if err := store.WritePaper(path, paper); err != nil {
-		return fmt.Errorf("write paper %s: %w", paper.ID, err)
-	}
-	return nil
 }

@@ -3,12 +3,10 @@ package catalog
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/mhlotto/vibrazioni/papersplz/internal/model"
-	"github.com/mhlotto/vibrazioni/papersplz/internal/store"
 )
 
 type EditOptions struct {
@@ -32,7 +30,7 @@ func EditPaper(catalogPath, selector string, options EditOptions, updatedAt time
 		options.Title = &title
 	}
 	if options.AuthorsSet {
-		options.Authors = append([]string(nil), options.Authors...)
+		options.Authors = append([]string{}, options.Authors...)
 		for i := range options.Authors {
 			options.Authors[i] = strings.TrimSpace(options.Authors[i])
 			if options.Authors[i] == "" {
@@ -66,8 +64,7 @@ func EditPaper(catalogPath, selector string, options EditOptions, updatedAt time
 		paper.SourceURL = *options.SourceURL
 	}
 	paper.UpdatedAt = updatedAt.UTC()
-	path := filepath.Join(catalogPath, PapersDirectory, paper.ID, store.RecordFilename)
-	if err := store.WritePaper(path, paper); err != nil {
+	if err := writePaperRecord(catalogPath, &paper); err != nil {
 		return model.Paper{}, fmt.Errorf("write paper metadata: %w", err)
 	}
 	return paper, nil

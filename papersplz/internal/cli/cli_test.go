@@ -452,7 +452,7 @@ func TestExportCommand(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &output); err != nil {
 		t.Fatalf("decode populated export: %v; output = %q", err, stdout)
 	}
-	if output.Catalog.SchemaVersion != model.SchemaVersion || output.Catalog.Description != "Papers and notes" || len(output.Papers) != 1 {
+	if output.Catalog.SchemaVersion != model.CurrentCatalogSchemaVersion || output.Catalog.Description != "Papers and notes" || len(output.Papers) != 1 {
 		t.Fatalf("export = %#v", output)
 	}
 	got := output.Papers[0]
@@ -487,6 +487,31 @@ func TestEditCommandUpdatesMetadataWithPrefix(t *testing.T) {
 	}
 	if stored.Title != "Corrected" || !reflect.DeepEqual(stored.Authors, []string{"Bob", "Carol"}) || stored.Source != "New Journal" || stored.SourceURL != "https://new.example/paper" || stored.ID != paper.ID || !stored.AddedAt.Equal(paper.AddedAt) || !stored.UpdatedAt.After(paper.UpdatedAt) {
 		t.Fatalf("stored paper = %#v", stored)
+	}
+	beforeClear := stored
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "edit", paper.ID, "--clear-authors"}, nil)
+	if status != 0 || stderr != "" || !strings.Contains(stdout, paper.ID) {
+		t.Fatalf("clear authors: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+	stored, err = store.ReadPaper(recordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Authors == nil || len(stored.Authors) != 0 || stored.Title != beforeClear.Title || stored.Source != beforeClear.Source || stored.SourceURL != beforeClear.SourceURL || !stored.UpdatedAt.After(beforeClear.UpdatedAt) {
+		t.Fatalf("paper after clear authors = %#v", stored)
+	}
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "show", paper.ID, "--json"}, nil)
+	if status != 0 || stderr != "" {
+		t.Fatalf("show after clear: status = %d, stderr = %q", status, stderr)
+	}
+	var shown ShowOutput
+	if err := json.Unmarshal([]byte(stdout), &shown); err != nil || shown.Authors == nil || len(shown.Authors) != 0 {
+		t.Fatalf("show authors = %#v, error = %v", shown.Authors, err)
+	}
+
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "edit", paper.ID, "--clear-authors", "--author", "Alice"}, nil)
+	if status != 2 || stdout != "" || !strings.Contains(stderr, "cannot be combined") {
+		t.Fatalf("conflicting authors: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
 	}
 
 	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "edit", paper.ID}, nil)
@@ -990,7 +1015,7 @@ func removeCLIFixture(t *testing.T) (string, model.Paper) {
 
 func cliFixturePaper(id, title string, authors, tags []string, timestamp time.Time) model.Paper {
 	return model.Paper{
-		SchemaVersion: model.SchemaVersion,
+		SchemaVersion: model.CurrentPaperSchemaVersion,
 		ID:            id,
 		Title:         title,
 		Authors:       authors,
@@ -1071,7 +1096,7 @@ func TestCommandHelpDoesNotRequireCatalog(t *testing.T) {
 	}{
 		{args: []string{"init", "--help"}, want: []string{"Usage: papersplz init", "--description"}},
 		{args: []string{"add", "--help"}, want: []string{"Usage: papersplz add", "--title", "--author", "--tag"}},
-		{args: []string{"edit", "--help"}, want: []string{"Usage: papersplz edit", "--title", "--author", "--source-url"}},
+		{args: []string{"edit", "--help"}, want: []string{"Usage: papersplz edit", "--title", "--author", "--clear-authors", "--source-url"}},
 		{args: []string{"remove", "--help"}, want: []string{"Usage: papersplz remove", "--yes"}},
 		{args: []string{"show", "--help"}, want: []string{"Usage: papersplz show", "--json"}},
 		{args: []string{"path", "--help"}, want: []string{"Usage: papersplz path"}},

@@ -3,7 +3,14 @@ package model
 
 import "time"
 
-const SchemaVersion = 1
+const (
+	CatalogSchemaVersion1       = 1
+	CatalogSchemaVersion2       = 2
+	CurrentCatalogSchemaVersion = CatalogSchemaVersion2
+	PaperSchemaVersion1         = 1
+	PaperSchemaVersion2         = 2
+	CurrentPaperSchemaVersion   = PaperSchemaVersion2
+)
 
 type Catalog struct {
 	SchemaVersion int       `json:"schema_version"`

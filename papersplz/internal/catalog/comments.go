@@ -3,14 +3,12 @@ package catalog
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/mhlotto/vibrazioni/papersplz/internal/identity"
 	"github.com/mhlotto/vibrazioni/papersplz/internal/model"
-	"github.com/mhlotto/vibrazioni/papersplz/internal/store"
 )
 
 func AddComment(catalogPath, selector, text string, createdAt time.Time) (model.Paper, model.Comment, error) {
@@ -34,7 +32,7 @@ func AddComment(catalogPath, selector, text string, createdAt time.Time) (model.
 	comment := model.Comment{ID: id, Text: text, CreatedAt: timestamp, UpdatedAt: timestamp}
 	paper.Comments = append(paper.Comments, comment)
 	paper.UpdatedAt = timestamp
-	if err := writeCommentPaper(catalogPath, paper); err != nil {
+	if err := writeCommentPaper(catalogPath, &paper); err != nil {
 		return model.Paper{}, model.Comment{}, err
 	}
 	return paper, comment, nil
@@ -83,7 +81,7 @@ func EditComment(catalogPath, paperSelector, commentSelector, text string, updat
 	paper.Comments[index].Text = text
 	paper.Comments[index].UpdatedAt = timestamp
 	paper.UpdatedAt = timestamp
-	if err := writeCommentPaper(catalogPath, paper); err != nil {
+	if err := writeCommentPaper(catalogPath, &paper); err != nil {
 		return model.Paper{}, model.Comment{}, err
 	}
 	return paper, paper.Comments[index], nil
@@ -101,7 +99,7 @@ func RemoveComment(catalogPath, paperSelector, commentSelector string, updatedAt
 	removed := paper.Comments[index]
 	paper.Comments = append(paper.Comments[:index], paper.Comments[index+1:]...)
 	paper.UpdatedAt = updatedAt.UTC()
-	if err := writeCommentPaper(catalogPath, paper); err != nil {
+	if err := writeCommentPaper(catalogPath, &paper); err != nil {
 		return model.Paper{}, model.Comment{}, err
 	}
 	return paper, removed, nil
@@ -120,9 +118,8 @@ func resolveCommentIndex(paper model.Paper, selector string) (int, error) {
 	return 0, errors.New("resolved comment is missing")
 }
 
-func writeCommentPaper(catalogPath string, paper model.Paper) error {
-	path := filepath.Join(catalogPath, PapersDirectory, paper.ID, store.RecordFilename)
-	if err := store.WritePaper(path, paper); err != nil {
+func writeCommentPaper(catalogPath string, paper *model.Paper) error {
+	if err := writePaperRecord(catalogPath, paper); err != nil {
 		return fmt.Errorf("write paper comments: %w", err)
 	}
 	return nil

@@ -169,7 +169,7 @@ func TestGetInfoEmptyAndPopulated(t *testing.T) {
 func testInspectionPaper(id, title string, authors, tags []string) model.Paper {
 	timestamp := time.Date(2026, 8, 24, 15, 31, 0, 0, time.UTC)
 	return model.Paper{
-		SchemaVersion: model.SchemaVersion,
+		SchemaVersion: model.CurrentPaperSchemaVersion,
 		ID:            id,
 		Title:         title,
 		Authors:       authors,

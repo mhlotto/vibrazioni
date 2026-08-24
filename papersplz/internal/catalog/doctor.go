@@ -74,6 +74,7 @@ func Doctor(catalogPath string) []DoctorProblem {
 		if err := model.ValidatePaper(paper); err != nil {
 			problems = append(problems, DoctorProblem{Path: filepath.Join(relativeDirectory, store.RecordFilename), Message: err.Error()})
 		}
+		problems = append(problems, doctorSchemaConsistency(metadata.SchemaVersion, relativeDirectory, paper)...)
 		if paper.ID != entry.Name() {
 			problems = append(problems, DoctorProblem{Path: relativeDirectory, Message: fmt.Sprintf("paper ID %q does not match directory name", paper.ID)})
 		}
@@ -82,6 +83,21 @@ func Doctor(catalogPath string) []DoctorProblem {
 	}
 	problems = append(problems, duplicateDoctorProblems(records)...)
 	problems = append(problems, relationshipDoctorProblems(records)...)
+	return problems
+}
+
+func doctorSchemaConsistency(catalogSchema int, relativeDirectory string, paper model.Paper) []DoctorProblem {
+	path := filepath.Join(relativeDirectory, store.RecordFilename)
+	problems := make([]DoctorProblem, 0, 2)
+	if paper.SchemaVersion == model.PaperSchemaVersion1 && len(paper.Relationships) != 0 {
+		problems = append(problems, DoctorProblem{Path: path, Message: "schema version 1 record contains relationship metadata; upgrade to schema version 2 is required"})
+	}
+	if catalogSchema == model.CatalogSchemaVersion1 && paper.SchemaVersion == model.PaperSchemaVersion2 {
+		problems = append(problems, DoctorProblem{Path: path, Message: "paper schema version 2 is incompatible with catalog schema version 1"})
+	}
+	if catalogSchema == model.CatalogSchemaVersion2 && paper.SchemaVersion == model.PaperSchemaVersion1 {
+		problems = append(problems, DoctorProblem{Path: path, Message: "paper schema version 1 is pending upgrade in schema version 2 catalog"})
+	}
 	return problems
 }
 
