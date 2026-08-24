@@ -41,6 +41,10 @@ Options:
   --author TEXT    filter by author text
   --json           print JSON
 `
+	infoHelp = `Usage: papersplz info [--json]
+
+Show catalog metadata, counts, path, and last-added date.
+`
 	searchHelp = `Usage: papersplz search TERM... [OPTIONS]
 
 Search title, authors, source, tags, review text, and comment text.
@@ -86,6 +90,7 @@ Commands:
 var topLevelHelp = map[string]string{
 	"init": initHelp, "add": addHelp, "remove": removeHelp,
 	"show": showHelp, "path": pathHelp, "list": listHelp,
+	"info":   infoHelp,
 	"search": searchHelp, "doctor": doctorHelp,
 	"review": reviewHelp, "comment": commentHelp, "tag": tagHelp,
 }

@@ -81,6 +81,39 @@ func TestDocumentPath(t *testing.T) {
 	}
 }
 
+func TestGetInfoEmptyAndPopulated(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		catalogPath := newTestCatalog(t)
+		info, err := GetInfo(catalogPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Metadata.Name != "Test Catalog" || info.Path != catalogPath || info.PaperCount != 0 || info.TagCount != 0 || info.LastAdded != nil {
+			t.Fatalf("GetInfo() = %#v", info)
+		}
+	})
+
+	t.Run("populated counts distinct tags and latest addition", func(t *testing.T) {
+		catalogPath := newTestCatalog(t)
+		firstAt := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
+		lastAt := time.Date(2026, 8, 25, 9, 30, 0, 0, time.UTC)
+		first := testInspectionPaper("aaaa00000000", "First", nil, []string{"math", "topology"})
+		first.AddedAt, first.UpdatedAt = firstAt, firstAt
+		last := testInspectionPaper("bbbb00000000", "Last", nil, []string{"math", "physics"})
+		last.AddedAt, last.UpdatedAt = lastAt, lastAt
+		writeCatalogPaper(t, catalogPath, last)
+		writeCatalogPaper(t, catalogPath, first)
+
+		info, err := GetInfo(catalogPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.PaperCount != 2 || info.TagCount != 3 || info.LastAdded == nil || !info.LastAdded.Equal(lastAt) {
+			t.Fatalf("GetInfo() = %#v", info)
+		}
+	})
+}
+
 func testInspectionPaper(id, title string, authors, tags []string) model.Paper {
 	timestamp := time.Date(2026, 8, 24, 15, 31, 0, 0, time.UTC)
 	return model.Paper{

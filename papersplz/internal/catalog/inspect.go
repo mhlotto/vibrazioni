@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/mhlotto/vibrazioni/papersplz/internal/model"
 	"github.com/mhlotto/vibrazioni/papersplz/internal/store"
@@ -15,6 +16,45 @@ import (
 type ListOptions struct {
 	Tag    string
 	Author string
+}
+
+type Info struct {
+	Metadata   model.Catalog
+	Path       string
+	PaperCount int
+	TagCount   int
+	LastAdded  *time.Time
+}
+
+// GetInfo returns catalog-level metadata and summary counts without modifying
+// the catalog.
+func GetInfo(catalogPath string) (Info, error) {
+	metadata, err := store.ReadCatalog(filepath.Join(catalogPath, store.CatalogFilename))
+	if err != nil {
+		return Info{}, fmt.Errorf("read catalog: %w", err)
+	}
+	papers, err := ListPapers(catalogPath, ListOptions{})
+	if err != nil {
+		return Info{}, err
+	}
+	tags := make(map[string]struct{})
+	var lastAdded *time.Time
+	for _, paper := range papers {
+		for _, tag := range paper.Tags {
+			tags[tag] = struct{}{}
+		}
+		if lastAdded == nil || paper.AddedAt.After(*lastAdded) {
+			addedAt := paper.AddedAt
+			lastAdded = &addedAt
+		}
+	}
+	return Info{
+		Metadata:   metadata,
+		Path:       catalogPath,
+		PaperCount: len(papers),
+		TagCount:   len(tags),
+		LastAdded:  lastAdded,
+	}, nil
 }
 
 // LoadPaper resolves selector and loads its validated record.

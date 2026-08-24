@@ -237,6 +237,55 @@ func TestShowListAndPathCommands(t *testing.T) {
 	})
 }
 
+func TestInfoCommandEmptyAndPopulated(t *testing.T) {
+	catalogPath := filepath.Join(t.TempDir(), "catalog")
+	if err := catalog.Initialize(catalogPath, "Mathematics", "Mathematics papers and notes", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("empty through environment", func(t *testing.T) {
+		status, stdout, stderr := runForTest([]string{"info"}, map[string]string{"PAPERSPLZ_HOME": catalogPath})
+		if status != 0 || stderr != "" {
+			t.Fatalf("status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+		}
+		want := "Name: Mathematics\nDescription: Mathematics papers and notes\nPath: " + catalogPath + "\nPapers: 0\nTags: 0\n"
+		if stdout != want || strings.Contains(stdout, "Last added:") {
+			t.Fatalf("stdout = %q, want %q", stdout, want)
+		}
+	})
+
+	firstAt := time.Date(2026, 8, 23, 15, 0, 0, 0, time.UTC)
+	lastAt := time.Date(2026, 8, 25, 8, 0, 0, 0, time.UTC)
+	first := cliFixturePaper("aaaa000000000000", "First", nil, []string{"math", "topology"}, firstAt)
+	last := cliFixturePaper("bbbb000000000000", "Last", nil, []string{"math", "physics"}, lastAt)
+	writeCLIFixturePaper(t, catalogPath, first)
+	writeCLIFixturePaper(t, catalogPath, last)
+
+	t.Run("populated JSON and home override", func(t *testing.T) {
+		status, stdout, stderr := runForTest(
+			[]string{"--home", catalogPath, "info", "--json"},
+			map[string]string{"PAPERSPLZ_HOME": filepath.Join(t.TempDir(), "wrong")},
+		)
+		if status != 0 || stderr != "" {
+			t.Fatalf("status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+		}
+		var output InfoOutput
+		if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+			t.Fatal(err)
+		}
+		if output.Name != "Mathematics" || output.Description != "Mathematics papers and notes" || output.Path != catalogPath || output.PaperCount != 2 || output.TagCount != 3 || output.LastAdded == nil || !output.LastAdded.Equal(lastAt) {
+			t.Fatalf("info JSON = %#v", output)
+		}
+	})
+
+	t.Run("populated human date", func(t *testing.T) {
+		status, stdout, stderr := runForTest([]string{"--home", catalogPath, "info"}, nil)
+		if status != 0 || stderr != "" || !strings.Contains(stdout, "Papers: 2\nTags: 3\nLast added: 2026-08-25\n") {
+			t.Fatalf("status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+		}
+	})
+}
+
 func TestRemoveCommandConfirmation(t *testing.T) {
 	t.Run("non-interactive requires yes", func(t *testing.T) {
 		catalogPath, paper := removeCLIFixture(t)
@@ -703,6 +752,7 @@ func TestCommandHelpDoesNotRequireCatalog(t *testing.T) {
 		{args: []string{"show", "--help"}, want: []string{"Usage: papersplz show", "--json"}},
 		{args: []string{"path", "--help"}, want: []string{"Usage: papersplz path"}},
 		{args: []string{"list", "--help"}, want: []string{"Usage: papersplz list", "--author", "--json"}},
+		{args: []string{"info", "--help"}, want: []string{"Usage: papersplz info", "--json"}},
 		{args: []string{"search", "--help"}, want: []string{"Usage: papersplz search", "--tag", "--json"}},
 		{args: []string{"doctor", "--help"}, want: []string{"Usage: papersplz doctor"}},
 		{args: []string{"review", "--help"}, want: []string{"Usage: papersplz review", "show PAPER", "set PAPER"}},

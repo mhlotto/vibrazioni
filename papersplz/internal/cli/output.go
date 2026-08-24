@@ -8,8 +8,18 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/mhlotto/vibrazioni/papersplz/internal/catalog"
 	"github.com/mhlotto/vibrazioni/papersplz/internal/model"
 )
+
+type InfoOutput struct {
+	Name        string     `json:"name"`
+	Description string     `json:"description"`
+	Path        string     `json:"path"`
+	PaperCount  int        `json:"paper_count"`
+	TagCount    int        `json:"tag_count"`
+	LastAdded   *time.Time `json:"last_added,omitempty"`
+}
 
 type ShowOutput struct {
 	ID               string    `json:"id"`
@@ -55,6 +65,29 @@ type CommentOutput struct {
 	Text      string    `json:"text"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func newInfoOutput(info catalog.Info) InfoOutput {
+	return InfoOutput{
+		Name:        info.Metadata.Name,
+		Description: info.Metadata.Description,
+		Path:        info.Path,
+		PaperCount:  info.PaperCount,
+		TagCount:    info.TagCount,
+		LastAdded:   info.LastAdded,
+	}
+}
+
+func writeInfo(writer io.Writer, info catalog.Info) {
+	output := newInfoOutput(info)
+	fmt.Fprintf(writer, "Name: %s\n", output.Name)
+	fmt.Fprintf(writer, "Description: %s\n", displayValue(output.Description))
+	fmt.Fprintf(writer, "Path: %s\n", output.Path)
+	fmt.Fprintf(writer, "Papers: %d\n", output.PaperCount)
+	fmt.Fprintf(writer, "Tags: %d\n", output.TagCount)
+	if output.LastAdded != nil {
+		fmt.Fprintf(writer, "Last added: %s\n", output.LastAdded.Format("2006-01-02"))
+	}
 }
 
 func newShowOutput(paper model.Paper) ShowOutput {

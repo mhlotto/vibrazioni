@@ -88,6 +88,7 @@ does not scrape web pages.
 ```sh
 pplz list
 pplz list --tag topology --author alice
+pplz info
 pplz show PAPER_ID
 pplz path PAPER_ID
 open "$(pplz path PAPER_ID)"       # macOS
@@ -145,10 +146,11 @@ Search performs a linear metadata scan and creates no index.
 
 ## JSON output
 
-Structured output is available for `list`, `show`, `search`, `review show`,
-`comment list`, `comment show`, and `tag list`:
+Structured output is available for `info`, `list`, `show`, `search`,
+`review show`, `comment list`, `comment show`, and `tag list`:
 
 ```sh
+pplz info --json
 pplz list --json
 pplz show PAPER_ID --json
 pplz search topology --json

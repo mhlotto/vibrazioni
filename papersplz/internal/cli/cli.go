@@ -26,6 +26,7 @@ Commands:
   show PAPER      show a paper summary
   path PAPER      print a paper's stored path
   list            list papers
+  info            show catalog information
   review          show, set, edit, or remove a review
   comment         add, list, show, edit, or remove comments
   tag             add, remove, or list paper tags
@@ -34,7 +35,7 @@ Commands:
 `
 
 var catalogCommands = map[string]struct{}{
-	"add": {}, "remove": {}, "show": {}, "path": {}, "list": {},
+	"add": {}, "remove": {}, "show": {}, "path": {}, "list": {}, "info": {},
 	"review": {}, "comment": {}, "tag": {}, "search": {}, "doctor": {},
 }
 
@@ -105,6 +106,8 @@ func run(args []string, stdin io.Reader, interactive bool, stdout, stderr io.Wri
 		return runShow(catalogHome, commandArgs, stdout, stderr)
 	case "list":
 		return runList(catalogHome, commandArgs, stdout, stderr)
+	case "info":
+		return runInfo(catalogHome, commandArgs, stdout, stderr)
 	case "path":
 		return runPath(catalogHome, commandArgs, stdout, stderr)
 	case "tag":
@@ -121,6 +124,34 @@ func run(args []string, stdin io.Reader, interactive bool, stdout, stderr io.Wri
 
 	fmt.Fprintf(stderr, "papersplz: %s is not implemented\n", command)
 	return 1
+}
+
+func runInfo(catalogHome string, args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("papersplz info", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	flags.Usage = func() {}
+	jsonOutput := flags.Bool("json", false, "print JSON")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(stderr, "papersplz: info does not accept arguments")
+		return 2
+	}
+	info, err := catalog.GetInfo(catalogHome)
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: info: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := writeJSON(stdout, newInfoOutput(info)); err != nil {
+			fmt.Fprintf(stderr, "papersplz: info: write JSON: %v\n", err)
+			return 1
+		}
+	} else {
+		writeInfo(stdout, info)
+	}
+	return 0
 }
 
 func runDoctor(catalogHome string, args []string, stdout, stderr io.Writer) int {
