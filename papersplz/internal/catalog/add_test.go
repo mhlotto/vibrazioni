@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -161,6 +163,127 @@ func TestAddLocalFailureLeavesNoPartialPaper(t *testing.T) {
 	assertNoImportStages(t, catalogPath)
 }
 
+func TestAddDirectURL(t *testing.T) {
+	contents := []byte("downloaded paper contents\n")
+	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "application/pdf")
+		response.Write(contents)
+	})
+	tests := []struct {
+		name      string
+		newServer func(http.Handler) *httptest.Server
+	}{
+		{name: "http", newServer: httptest.NewServer},
+		{name: "https", newServer: httptest.NewTLSServer},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			catalogPath := newTestCatalog(t)
+			server := tt.newServer(handler)
+			defer server.Close()
+			suppliedURL := server.URL + "/papers/Interesting.PDF?download=1"
+			paper, err := AddWithHTTPClient(catalogPath, suppliedURL, AddOptions{
+				Title: "Remote Paper",
+			}, time.Now(), server.Client())
+			if err != nil {
+				t.Fatalf("AddWithHTTPClient() error = %v", err)
+			}
+			if paper.SourceURL != suppliedURL {
+				t.Fatalf("source_url = %q, want %q", paper.SourceURL, suppliedURL)
+			}
+			if paper.File.Name != "paper.pdf" || paper.File.OriginalName != "Interesting.PDF" {
+				t.Fatalf("file metadata = %#v", paper.File)
+			}
+			stored, err := os.ReadFile(filepath.Join(catalogPath, PapersDirectory, paper.ID, paper.File.Name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(stored) != string(contents) {
+				t.Fatalf("stored contents = %q, want %q", stored, contents)
+			}
+		})
+	}
+}
+
+func TestAddURLWithoutFilenameUsesBin(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Write([]byte("document"))
+	}))
+	defer server.Close()
+	paper, err := Add(newTestCatalog(t), server.URL+"/", AddOptions{Title: "No Filename"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if paper.File.Name != "paper.bin" || paper.File.OriginalName != "download" {
+		t.Fatalf("file metadata = %#v", paper.File)
+	}
+}
+
+func TestURLImportParticipatesInDuplicateDetection(t *testing.T) {
+	catalogPath := newTestCatalog(t)
+	contents := []byte("duplicate across source types")
+	localPath := filepath.Join(t.TempDir(), "local.pdf")
+	if err := os.WriteFile(localPath, contents, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	local, err := AddLocal(catalogPath, localPath, AddOptions{Title: "Local"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Write(contents)
+	}))
+	defer server.Close()
+	_, err = Add(catalogPath, server.URL+"/remote.ps", AddOptions{Title: "Remote"}, time.Now())
+	var duplicate *DuplicateContentError
+	if !errors.As(err, &duplicate) || duplicate.PaperID != local.ID {
+		t.Fatalf("Add() error = %v, want duplicate of %s", err, local.ID)
+	}
+	assertOnlyPaper(t, catalogPath, local.ID)
+	assertNoImportStages(t, catalogPath)
+}
+
+func TestHTTPFailuresLeaveNoCompletePaper(t *testing.T) {
+	tests := []struct {
+		name    string
+		handler http.HandlerFunc
+	}{
+		{
+			name: "non-success status",
+			handler: func(response http.ResponseWriter, request *http.Request) {
+				http.Error(response, "not found", http.StatusNotFound)
+			},
+		},
+		{
+			name: "interrupted body",
+			handler: func(response http.ResponseWriter, request *http.Request) {
+				response.Header().Set("Content-Length", "100")
+				response.WriteHeader(http.StatusOK)
+				response.Write([]byte("short"))
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			catalogPath := newTestCatalog(t)
+			server := httptest.NewServer(tt.handler)
+			defer server.Close()
+			_, err := Add(catalogPath, server.URL+"/paper.pdf", AddOptions{Title: "Failure"}, time.Now())
+			if err == nil {
+				t.Fatal("Add() succeeded, want download failure")
+			}
+			entries, readErr := os.ReadDir(filepath.Join(catalogPath, PapersDirectory))
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if len(entries) != 0 {
+				t.Fatalf("failed download left paper directories: %v", entryNames(entries))
+			}
+			assertNoImportStages(t, catalogPath)
+		})
+	}
+}
+
 func newTestCatalog(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "catalog")
@@ -178,5 +301,16 @@ func assertNoImportStages(t *testing.T, catalogPath string) {
 	}
 	if len(matches) != 0 {
 		t.Fatalf("import staging directories left behind: %v", matches)
+	}
+}
+
+func assertOnlyPaper(t *testing.T, catalogPath, id string) {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(catalogPath, PapersDirectory))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != id {
+		t.Fatalf("paper directories = %v, want only %s", entryNames(entries), id)
 	}
 }

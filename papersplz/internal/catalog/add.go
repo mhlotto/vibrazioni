@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -38,28 +41,29 @@ type AddOptions struct {
 
 var extensionPattern = regexp.MustCompile(`^[a-z0-9]{1,16}$`)
 
-// AddLocal copies a local document into a newly staged paper directory and
-// returns the durable paper record.
-func AddLocal(catalogPath, sourcePath string, options AddOptions, addedAt time.Time) (model.Paper, error) {
-	options.Title = strings.TrimSpace(options.Title)
-	if options.Title == "" {
-		return model.Paper{}, errors.New("paper title is required")
-	}
-	if sourcePath == "" {
-		return model.Paper{}, errors.New("source document is required")
-	}
-	if err := normalizeOptions(&options); err != nil {
-		return model.Paper{}, err
-	}
+// Add imports a local document or a direct HTTP or HTTPS URL.
+func Add(catalogPath, source string, options AddOptions, addedAt time.Time) (model.Paper, error) {
+	return AddWithHTTPClient(catalogPath, source, options, addedAt, http.DefaultClient)
+}
 
-	if _, err := store.ReadCatalog(filepath.Join(catalogPath, store.CatalogFilename)); err != nil {
-		return model.Paper{}, fmt.Errorf("read catalog: %w", err)
+// AddWithHTTPClient is Add with an explicit client for controlled callers and
+// tests. A nil client uses http.DefaultClient.
+func AddWithHTTPClient(catalogPath, source string, options AddOptions, addedAt time.Time, client *http.Client) (model.Paper, error) {
+	parsed, isURL := directDocumentURL(source)
+	if !isURL {
+		return AddLocal(catalogPath, source, options, addedAt)
 	}
-	papersPath := filepath.Join(catalogPath, PapersDirectory)
-	if info, err := os.Stat(papersPath); err != nil {
-		return model.Paper{}, fmt.Errorf("inspect papers directory: %w", err)
-	} else if !info.IsDir() {
-		return model.Paper{}, errors.New("papers path is not a directory")
+	if client == nil {
+		client = http.DefaultClient
+	}
+	return addURL(catalogPath, source, parsed, options, addedAt, client)
+}
+
+// AddLocal copies a local document into a newly staged paper directory.
+func AddLocal(catalogPath, sourcePath string, options AddOptions, addedAt time.Time) (model.Paper, error) {
+	papersPath, options, err := prepareAdd(catalogPath, sourcePath, options)
+	if err != nil {
+		return model.Paper{}, err
 	}
 
 	source, err := os.Open(sourcePath)
@@ -74,14 +78,66 @@ func AddLocal(catalogPath, sourcePath string, options AddOptions, addedAt time.T
 	if !info.Mode().IsRegular() {
 		return model.Paper{}, errors.New("source document is not a regular file")
 	}
+	originalName := filepath.Base(sourcePath)
+	return addFromReader(catalogPath, papersPath, source, originalName, "", options, addedAt)
+}
 
+func addURL(catalogPath, suppliedURL string, parsed *url.URL, options AddOptions, addedAt time.Time, client *http.Client) (model.Paper, error) {
+	papersPath, options, err := prepareAdd(catalogPath, suppliedURL, options)
+	if err != nil {
+		return model.Paper{}, err
+	}
+	request, err := http.NewRequest(http.MethodGet, suppliedURL, nil)
+	if err != nil {
+		return model.Paper{}, fmt.Errorf("create download request: %w", err)
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return model.Paper{}, fmt.Errorf("download source document: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return model.Paper{}, fmt.Errorf("download source document: HTTP status %s", response.Status)
+	}
+	originalName := path.Base(parsed.Path)
+	if strings.HasSuffix(parsed.Path, "/") || originalName == "." || originalName == "/" || originalName == "" {
+		originalName = "download"
+	}
+	return addFromReader(catalogPath, papersPath, response.Body, originalName, suppliedURL, options, addedAt)
+}
+
+func prepareAdd(catalogPath, source string, options AddOptions) (string, AddOptions, error) {
+	options.Title = strings.TrimSpace(options.Title)
+	if options.Title == "" {
+		return "", AddOptions{}, errors.New("paper title is required")
+	}
+	if source == "" {
+		return "", AddOptions{}, errors.New("source document is required")
+	}
+	if err := normalizeOptions(&options); err != nil {
+		return "", AddOptions{}, err
+	}
+
+	if _, err := store.ReadCatalog(filepath.Join(catalogPath, store.CatalogFilename)); err != nil {
+		return "", AddOptions{}, fmt.Errorf("read catalog: %w", err)
+	}
+	papersPath := filepath.Join(catalogPath, PapersDirectory)
+	if info, err := os.Stat(papersPath); err != nil {
+		return "", AddOptions{}, fmt.Errorf("inspect papers directory: %w", err)
+	} else if !info.IsDir() {
+		return "", AddOptions{}, errors.New("papers path is not a directory")
+	}
+	return papersPath, options, nil
+}
+
+func addFromReader(catalogPath, papersPath string, source io.Reader, originalName, sourceURL string, options AddOptions, addedAt time.Time) (model.Paper, error) {
 	stagePath, err := os.MkdirTemp(catalogPath, ".papersplz-import-*")
 	if err != nil {
 		return model.Paper{}, fmt.Errorf("create import staging directory: %w", err)
 	}
 	defer os.RemoveAll(stagePath)
 
-	storedName := normalizedDocumentName(filepath.Base(sourcePath))
+	storedName := normalizedDocumentName(originalName)
 	size, digest, err := copyAndHash(source, filepath.Join(stagePath, storedName))
 	if err != nil {
 		return model.Paper{}, err
@@ -105,11 +161,12 @@ func AddLocal(catalogPath, sourcePath string, options AddOptions, addedAt time.T
 		Title:         options.Title,
 		Authors:       options.Authors,
 		Source:        strings.TrimSpace(options.Source),
+		SourceURL:     sourceURL,
 		AddedAt:       timestamp,
 		UpdatedAt:     timestamp,
 		File: model.File{
 			Name:         storedName,
-			OriginalName: filepath.Base(sourcePath),
+			OriginalName: originalName,
 			Size:         size,
 			SHA256:       digest,
 		},
@@ -127,6 +184,17 @@ func AddLocal(catalogPath, sourcePath string, options AddOptions, addedAt time.T
 		return model.Paper{}, fmt.Errorf("complete paper import: %w", err)
 	}
 	return paper, nil
+}
+
+func directDocumentURL(source string) (*url.URL, bool) {
+	parsed, err := url.Parse(source)
+	if err != nil || parsed.Host == "" {
+		return nil, false
+	}
+	if !strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https") {
+		return nil, false
+	}
+	return parsed, true
 }
 
 func normalizeOptions(options *AddOptions) error {

@@ -16,7 +16,7 @@ const usage = `Usage: papersplz [--home PATH] COMMAND [ARGUMENTS]
 
 Commands:
   init PATH       create a catalog
-  add SOURCE      add a local paper
+  add SOURCE      add a local or direct-URL paper
   remove          remove a paper (not yet implemented)
   show            show a paper (not yet implemented)
   path            print a paper's stored path (not yet implemented)
@@ -119,7 +119,7 @@ func runAdd(catalogHome string, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "papersplz: add requires --title TITLE")
 		return 2
 	}
-	paper, err := catalog.AddLocal(catalogHome, sourcePath, catalog.AddOptions{
+	paper, err := catalog.Add(catalogHome, sourcePath, catalog.AddOptions{
 		Title:   *title,
 		Authors: authors,
 		Source:  *source,
