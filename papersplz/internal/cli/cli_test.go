@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -25,6 +26,14 @@ func runForTest(args []string, env map[string]string) (int, string, string) {
 	return status, stdout.String(), stderr.String()
 }
 
+func runInteractiveForTest(args []string, input string) (int, string, string) {
+	var stdout, stderr bytes.Buffer
+	status := run(args, strings.NewReader(input), true, &stdout, &stderr, func(string) (string, bool) {
+		return "", false
+	})
+	return status, stdout.String(), stderr.String()
+}
+
 func TestCatalogCommandRequiresHome(t *testing.T) {
 	status, stdout, stderr := runForTest([]string{"list"}, nil)
 	if status == 0 {
@@ -44,9 +53,9 @@ func TestCatalogSourcesAllowDispatch(t *testing.T) {
 		args []string
 		env  map[string]string
 	}{
-		{name: "home flag", args: []string{"--home", "/flag/catalog", "remove"}},
-		{name: "environment", args: []string{"remove"}, env: map[string]string{"PAPERSPLZ_HOME": "/env/catalog"}},
-		{name: "flag overrides environment", args: []string{"--home", "/flag/catalog", "remove"}, env: map[string]string{"PAPERSPLZ_HOME": "/env/catalog"}},
+		{name: "home flag", args: []string{"--home", "/flag/catalog", "review"}},
+		{name: "environment", args: []string{"review"}, env: map[string]string{"PAPERSPLZ_HOME": "/env/catalog"}},
+		{name: "flag overrides environment", args: []string{"--home", "/flag/catalog", "review"}, env: map[string]string{"PAPERSPLZ_HOME": "/env/catalog"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -217,6 +226,63 @@ func TestShowListAndPathCommands(t *testing.T) {
 			t.Fatalf("status = %d, stdout = %q, stderr = %q, want %q", status, stdout, stderr, want)
 		}
 	})
+}
+
+func TestRemoveCommandConfirmation(t *testing.T) {
+	t.Run("non-interactive requires yes", func(t *testing.T) {
+		catalogPath, paper := removeCLIFixture(t)
+		status, stdout, stderr := runForTest([]string{"--home", catalogPath, "remove", paper.ID[:8]}, nil)
+		if status == 0 || stdout != "" || !strings.Contains(stderr, "requires --yes") {
+			t.Fatalf("status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+		}
+		if _, err := os.Stat(filepath.Join(catalogPath, catalog.PapersDirectory, paper.ID)); err != nil {
+			t.Fatalf("paper removed without confirmation: %v", err)
+		}
+	})
+
+	t.Run("non-interactive yes removes", func(t *testing.T) {
+		catalogPath, paper := removeCLIFixture(t)
+		status, stdout, stderr := runForTest([]string{"--home", catalogPath, "remove", paper.ID[:8], "--yes"}, nil)
+		if status != 0 || stderr != "" || !strings.Contains(stdout, "Removed "+paper.ID) {
+			t.Fatalf("status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+		}
+		if _, err := os.Stat(filepath.Join(catalogPath, catalog.PapersDirectory, paper.ID)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("paper directory still exists: %v", err)
+		}
+	})
+
+	t.Run("interactive decline is safe", func(t *testing.T) {
+		catalogPath, paper := removeCLIFixture(t)
+		status, stdout, stderr := runInteractiveForTest([]string{"--home", catalogPath, "remove", paper.ID[:8]}, "no\n")
+		if status != 0 || stdout != "Not removed.\n" || !strings.Contains(stderr, "[y/N]") {
+			t.Fatalf("status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+		}
+		if _, err := os.Stat(filepath.Join(catalogPath, catalog.PapersDirectory, paper.ID)); err != nil {
+			t.Fatalf("paper removed after decline: %v", err)
+		}
+	})
+
+	t.Run("interactive confirmation removes", func(t *testing.T) {
+		catalogPath, paper := removeCLIFixture(t)
+		status, stdout, stderr := runInteractiveForTest([]string{"--home", catalogPath, "remove", paper.ID[:8]}, "YES\n")
+		if status != 0 || !strings.Contains(stdout, "Removed "+paper.ID) || !strings.Contains(stderr, paper.Title) {
+			t.Fatalf("status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+		}
+		if _, err := os.Stat(filepath.Join(catalogPath, catalog.PapersDirectory, paper.ID)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("paper directory still exists: %v", err)
+		}
+	})
+}
+
+func removeCLIFixture(t *testing.T) (string, model.Paper) {
+	t.Helper()
+	catalogPath := filepath.Join(t.TempDir(), "catalog")
+	if err := catalog.Initialize(catalogPath, "Test", "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	paper := cliFixturePaper("abcd000000000000", "Disposable Paper", []string{"Alice"}, []string{"test"}, time.Now().UTC())
+	writeCLIFixturePaper(t, catalogPath, paper)
+	return catalogPath, paper
 }
 
 func cliFixturePaper(id, title string, authors, tags []string, timestamp time.Time) model.Paper {

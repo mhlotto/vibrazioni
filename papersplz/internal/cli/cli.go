@@ -2,10 +2,12 @@
 package cli
 
 import (
+	"bufio"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -17,7 +19,7 @@ const usage = `Usage: papersplz [--home PATH] COMMAND [ARGUMENTS]
 Commands:
   init PATH       create a catalog
   add SOURCE      add a local or direct-URL paper
-  remove          remove a paper (not yet implemented)
+  remove PAPER    remove a paper
   show PAPER      show a paper summary
   path PAPER      print a paper's stored path
   list            list papers
@@ -35,6 +37,16 @@ var catalogCommands = map[string]struct{}{
 
 // Run executes the command-line interface and returns a process exit status.
 func Run(args []string, stdout, stderr io.Writer, lookupEnv func(string) (string, bool)) int {
+	return run(args, nil, false, stdout, stderr, lookupEnv)
+}
+
+// RunWithInput executes the CLI using stdin and detects whether it is a
+// terminal for commands requiring interactive confirmation.
+func RunWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer, lookupEnv func(string) (string, bool)) int {
+	return run(args, stdin, isTerminalInput(stdin), stdout, stderr, lookupEnv)
+}
+
+func run(args []string, stdin io.Reader, interactive bool, stdout, stderr io.Writer, lookupEnv func(string) (string, bool)) int {
 	flags := flag.NewFlagSet("papersplz", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.Usage = func() {}
@@ -80,6 +92,8 @@ func Run(args []string, stdout, stderr io.Writer, lookupEnv func(string) (string
 	switch command {
 	case "add":
 		return runAdd(catalogHome, commandArgs, stdout, stderr)
+	case "remove":
+		return runRemove(catalogHome, commandArgs, stdin, interactive, stdout, stderr)
 	case "show":
 		return runShow(catalogHome, commandArgs, stdout, stderr)
 	case "list":
@@ -90,6 +104,67 @@ func Run(args []string, stdout, stderr io.Writer, lookupEnv func(string) (string
 
 	fmt.Fprintf(stderr, "papersplz: %s is not implemented\n", command)
 	return 1
+}
+
+func runRemove(catalogHome string, args []string, stdin io.Reader, interactive bool, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "papersplz: remove requires PAPER")
+		return 2
+	}
+	selector := args[0]
+	flags := flag.NewFlagSet("papersplz remove", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	flags.Usage = func() {}
+	yes := flags.Bool("yes", false, "remove without prompting")
+	if err := flags.Parse(args[1:]); err != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(stderr, "papersplz: remove accepts one PAPER")
+		return 2
+	}
+	if !interactive && !*yes {
+		fmt.Fprintln(stderr, "papersplz: remove requires --yes when stdin is not a terminal")
+		return 1
+	}
+	if interactive && !*yes {
+		paper, err := catalog.LoadPaper(catalogHome, selector)
+		if err != nil {
+			fmt.Fprintf(stderr, "papersplz: remove: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stderr, "Remove %s %q and its catalog-owned files? [y/N] ", paper.ID, paper.Title)
+		scanner := bufio.NewScanner(stdin)
+		if !scanner.Scan() {
+			if err := scanner.Err(); err != nil {
+				fmt.Fprintf(stderr, "papersplz: remove: read confirmation: %v\n", err)
+				return 1
+			}
+			fmt.Fprintln(stdout, "Not removed.")
+			return 0
+		}
+		answer := strings.ToLower(strings.TrimSpace(scanner.Text()))
+		if answer != "y" && answer != "yes" {
+			fmt.Fprintln(stdout, "Not removed.")
+			return 0
+		}
+	}
+	paper, err := catalog.RemovePaper(catalogHome, selector)
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: remove: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "Removed %s %s\n", paper.ID, paper.Title)
+	return 0
+}
+
+func isTerminalInput(input io.Reader) bool {
+	file, ok := input.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
 func runShow(catalogHome string, args []string, stdout, stderr io.Writer) int {
