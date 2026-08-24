@@ -100,6 +100,17 @@ func TestDoctorReportsMissingPapersDirectoryAndInvalidCatalog(t *testing.T) {
 	}
 }
 
+func TestDoctorReportsDanglingRelationship(t *testing.T) {
+	catalogPath := newTestCatalog(t)
+	paper := doctorPaper("aaaa00000000", "Dangling", []byte("document"))
+	paper.Relationships = []model.Relationship{{Type: model.RelationshipCites, PaperID: "bbbb00000000"}}
+	writeDoctorPaper(t, catalogPath, paper)
+	joined := doctorProblemText(Doctor(catalogPath))
+	if !strings.Contains(joined, "relationship \"cites\" references missing paper bbbb00000000") {
+		t.Fatalf("Doctor() output = %s", joined)
+	}
+}
+
 func TestDoctorReportsUnsupportedCatalogSchema(t *testing.T) {
 	path := t.TempDir()
 	metadata := model.Catalog{

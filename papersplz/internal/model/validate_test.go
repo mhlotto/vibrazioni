@@ -34,7 +34,8 @@ func validPaper() Paper {
 			Size:         481231,
 			SHA256:       strings.Repeat("a", 64),
 		},
-		Tags: []string{"topology", "homotopy"},
+		Tags:          []string{"topology", "homotopy"},
+		Relationships: []Relationship{{Type: RelationshipCites, PaperID: "bbbb0000"}},
 		Review: &Review{
 			Text:      "A useful review.",
 			CreatedAt: created,
@@ -78,6 +79,12 @@ func TestValidatePaper(t *testing.T) {
 		{name: "negative size", mutate: func(p *Paper) { p.File.Size = -1 }, want: "size"},
 		{name: "invalid digest", mutate: func(p *Paper) { p.File.SHA256 = "abc" }, want: "sha256"},
 		{name: "invalid tag", mutate: func(p *Paper) { p.Tags = []string{"Has Spaces"} }, want: "tag"},
+		{name: "invalid relationship type", mutate: func(p *Paper) { p.Relationships = []Relationship{{Type: "mentions", PaperID: "bbbb0000"}} }, want: "relationship type"},
+		{name: "invalid relationship id", mutate: func(p *Paper) { p.Relationships = []Relationship{{Type: RelationshipCites, PaperID: "NOT-HEX"}} }, want: "paper_id"},
+		{name: "self relationship", mutate: func(p *Paper) { p.Relationships = []Relationship{{Type: RelationshipCites, PaperID: p.ID}} }, want: "own paper"},
+		{name: "duplicate relationship", mutate: func(p *Paper) {
+			p.Relationships = []Relationship{{Type: RelationshipCites, PaperID: "bbbb0000"}, {Type: RelationshipCites, PaperID: "bbbb0000"}}
+		}, want: "duplicate relationship"},
 		{name: "invalid comment", mutate: func(p *Paper) { p.Comments[0].Text = "" }, want: "comment"},
 		{name: "updated before added", mutate: func(p *Paper) { p.UpdatedAt = p.AddedAt.Add(-time.Second) }, want: "precedes"},
 	}

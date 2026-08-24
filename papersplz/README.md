@@ -155,6 +155,22 @@ Tags are normalized to lowercase. `pplz tags` lists catalog-wide usage by count
 descending, then tag name ascending. Editing requires `EDITOR`; the program
 does not guess an editor.
 
+## Paper relationships
+
+Relationships use a fixed vocabulary and reference papers in the same catalog:
+
+```sh
+pplz relation add PAPER_ID cites OTHER_PAPER_ID
+pplz relation add PAPER_ID related-to OTHER_PAPER_ID
+pplz relation list PAPER_ID
+pplz relation list PAPER_ID --json
+pplz relation remove PAPER_ID cites OTHER_PAPER_ID
+```
+
+Inverse views such as `cited-by` and `superseded-by` are derived automatically.
+See [RELATIONSHIPS.md](RELATIONSHIPS.md) for storage, direction, inverse, and
+paper-removal semantics.
+
 ## Search
 
 Search is case-insensitive plain text over titles, authors, sources, tags,

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/mhlotto/vibrazioni/papersplz/internal/model"
 )
 
 func TestRemovePaperDeletesCatalogCopyAndPreservesSource(t *testing.T) {
@@ -40,5 +42,25 @@ func TestRemovePaperDeletesCatalogCopyAndPreservesSource(t *testing.T) {
 	}
 	if string(got) != string(contents) {
 		t.Fatalf("original source = %q, want %q", got, contents)
+	}
+}
+
+func TestRemovePaperCleansInboundRelationships(t *testing.T) {
+	catalogPath := newTestCatalog(t)
+	removed := testInspectionPaper("aaaa00000000", "Removed", nil, nil)
+	remaining := testInspectionPaper("bbbb00000000", "Remaining", nil, nil)
+	remaining.Relationships = []model.Relationship{{Type: model.RelationshipCites, PaperID: removed.ID}}
+	writeCatalogPaper(t, catalogPath, removed)
+	writeCatalogPaper(t, catalogPath, remaining)
+
+	if _, err := RemovePaper(catalogPath, removed.ID); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := LoadPaper(catalogPath, remaining.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored.Relationships) != 0 || !stored.UpdatedAt.After(remaining.UpdatedAt) {
+		t.Fatalf("remaining paper = %#v", stored)
 	}
 }

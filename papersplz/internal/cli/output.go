@@ -22,19 +22,20 @@ type InfoOutput struct {
 }
 
 type ShowOutput struct {
-	ID               string    `json:"id"`
-	Title            string    `json:"title"`
-	Authors          []string  `json:"authors"`
-	Source           string    `json:"source"`
-	SourceURL        string    `json:"source_url"`
-	Tags             []string  `json:"tags"`
-	AddedAt          time.Time `json:"added_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
-	StoredFilename   string    `json:"stored_filename"`
-	OriginalFilename string    `json:"original_filename"`
-	FileSize         int64     `json:"file_size"`
-	ReviewStatus     string    `json:"review_status"`
-	CommentCount     int       `json:"comment_count"`
+	ID               string               `json:"id"`
+	Title            string               `json:"title"`
+	Authors          []string             `json:"authors"`
+	Source           string               `json:"source"`
+	SourceURL        string               `json:"source_url"`
+	Tags             []string             `json:"tags"`
+	AddedAt          time.Time            `json:"added_at"`
+	UpdatedAt        time.Time            `json:"updated_at"`
+	StoredFilename   string               `json:"stored_filename"`
+	OriginalFilename string               `json:"original_filename"`
+	FileSize         int64                `json:"file_size"`
+	ReviewStatus     string               `json:"review_status"`
+	CommentCount     int                  `json:"comment_count"`
+	Relationships    []RelationshipOutput `json:"relationships"`
 }
 
 type ListOutput struct {
@@ -77,6 +78,12 @@ type ExportOutput struct {
 	Papers  []model.Paper `json:"papers"`
 }
 
+type RelationshipOutput struct {
+	Type    string `json:"type"`
+	PaperID string `json:"paper_id"`
+	Title   string `json:"title"`
+}
+
 func newInfoOutput(info catalog.Info) InfoOutput {
 	return InfoOutput{
 		Name:        info.Metadata.Name,
@@ -108,7 +115,7 @@ func writeInfo(writer io.Writer, info catalog.Info) {
 	}
 }
 
-func newShowOutput(paper model.Paper) ShowOutput {
+func newShowOutput(paper model.Paper, relationships []catalog.ListedRelationship) ShowOutput {
 	reviewStatus := "none"
 	if paper.Review != nil {
 		reviewStatus = "present"
@@ -127,6 +134,7 @@ func newShowOutput(paper model.Paper) ShowOutput {
 		FileSize:         paper.File.Size,
 		ReviewStatus:     reviewStatus,
 		CommentCount:     len(paper.Comments),
+		Relationships:    newRelationshipOutput(relationships),
 	}
 }
 
@@ -157,8 +165,8 @@ func writeJSON(writer io.Writer, value any) error {
 	return encoder.Encode(value)
 }
 
-func writeShow(writer io.Writer, paper model.Paper) {
-	output := newShowOutput(paper)
+func writeShow(writer io.Writer, paper model.Paper, relationships []catalog.ListedRelationship) {
+	output := newShowOutput(paper, relationships)
 	fmt.Fprintf(writer, "ID: %s\n", output.ID)
 	fmt.Fprintf(writer, "Title: %s\n", output.Title)
 	fmt.Fprintf(writer, "Authors: %s\n", displayList(output.Authors))
@@ -172,6 +180,26 @@ func writeShow(writer io.Writer, paper model.Paper) {
 	fmt.Fprintf(writer, "File size: %d bytes\n", output.FileSize)
 	fmt.Fprintf(writer, "Review: %s\n", output.ReviewStatus)
 	fmt.Fprintf(writer, "Comments: %d\n", output.CommentCount)
+	fmt.Fprintln(writer, "Relationships:")
+	writeRelationships(writer, output.Relationships)
+}
+
+func newRelationshipOutput(relationships []catalog.ListedRelationship) []RelationshipOutput {
+	output := make([]RelationshipOutput, len(relationships))
+	for i, relationship := range relationships {
+		output[i] = RelationshipOutput{Type: relationship.Type, PaperID: relationship.PaperID, Title: relationship.Title}
+	}
+	return output
+}
+
+func writeRelationships(writer io.Writer, relationships []RelationshipOutput) {
+	if len(relationships) == 0 {
+		fmt.Fprintln(writer, "  none")
+		return
+	}
+	for _, relationship := range relationships {
+		fmt.Fprintf(writer, "  %s %s %s\n", relationship.Type, abbreviatedID(relationship.PaperID), relationship.Title)
+	}
 }
 
 func writeList(writer io.Writer, papers []model.Paper) error {

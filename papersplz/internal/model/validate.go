@@ -17,6 +17,14 @@ var (
 	sha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
+const (
+	RelationshipRelatedTo    = "related-to"
+	RelationshipCites        = "cites"
+	RelationshipCitedBy      = "cited-by"
+	RelationshipSupersedes   = "supersedes"
+	RelationshipSupersededBy = "superseded-by"
+)
+
 func ValidateCatalog(c Catalog) error {
 	if err := validateSchema(c.SchemaVersion); err != nil {
 		return err
@@ -71,6 +79,20 @@ func ValidatePaper(p Paper) error {
 		}
 		seenTags[tag] = struct{}{}
 	}
+	seenRelationships := make(map[string]struct{}, len(p.Relationships))
+	for i, relationship := range p.Relationships {
+		if err := ValidateRelationship(relationship); err != nil {
+			return fmt.Errorf("relationship %d: %w", i, err)
+		}
+		if relationship.PaperID == p.ID {
+			return fmt.Errorf("relationship %d references its own paper", i)
+		}
+		key := relationship.Type + "\x00" + relationship.PaperID
+		if _, exists := seenRelationships[key]; exists {
+			return fmt.Errorf("duplicate relationship %q to %s", relationship.Type, relationship.PaperID)
+		}
+		seenRelationships[key] = struct{}{}
+	}
 	if p.Review != nil {
 		if err := validateReview(*p.Review); err != nil {
 			return err
@@ -85,6 +107,25 @@ func ValidatePaper(p Paper) error {
 			return fmt.Errorf("duplicate comment id %q", comment.ID)
 		}
 		seenComments[comment.ID] = struct{}{}
+	}
+	return nil
+}
+
+func ValidateRelationship(relationship Relationship) error {
+	if err := ValidateRelationshipType(relationship.Type); err != nil {
+		return err
+	}
+	if !identity.Valid(relationship.PaperID) {
+		return errors.New("paper_id must be lowercase hexadecimal")
+	}
+	return nil
+}
+
+func ValidateRelationshipType(relationshipType string) error {
+	switch relationshipType {
+	case RelationshipRelatedTo, RelationshipCites, RelationshipCitedBy, RelationshipSupersedes, RelationshipSupersededBy:
+	default:
+		return fmt.Errorf("unknown relationship type %q", relationshipType)
 	}
 	return nil
 }

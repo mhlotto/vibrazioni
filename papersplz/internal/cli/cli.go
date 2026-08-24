@@ -33,6 +33,7 @@ Commands:
   comment         add, list, show, edit, or remove comments
   tag             add, remove, or list paper tags
   tags            list catalog-wide tag usage
+  relation        add, list, or remove paper relationships
   search          search paper metadata
   export          export catalog metadata as JSON
   doctor          check catalog consistency
@@ -40,7 +41,7 @@ Commands:
 
 var catalogCommands = map[string]struct{}{
 	"add": {}, "edit": {}, "remove": {}, "show": {}, "path": {}, "open": {}, "list": {}, "info": {},
-	"review": {}, "comment": {}, "tag": {}, "tags": {}, "search": {}, "export": {}, "doctor": {},
+	"review": {}, "comment": {}, "tag": {}, "tags": {}, "relation": {}, "search": {}, "export": {}, "doctor": {},
 }
 
 // Run executes the command-line interface and returns a process exit status.
@@ -122,6 +123,8 @@ func run(args []string, stdin io.Reader, interactive bool, stdout, stderr io.Wri
 		return runTag(catalogHome, commandArgs, stdout, stderr)
 	case "tags":
 		return runTags(catalogHome, commandArgs, stdout, stderr)
+	case "relation":
+		return runRelation(catalogHome, commandArgs, stdout, stderr)
 	case "review":
 		return runReview(catalogHome, commandArgs, stdin, stdout, stderr, lookupEnv)
 	case "comment":
@@ -136,6 +139,73 @@ func run(args []string, stdin io.Reader, interactive bool, stdout, stderr io.Wri
 
 	fmt.Fprintf(stderr, "papersplz: %s is not implemented\n", command)
 	return 1
+}
+
+func runRelation(catalogHome string, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "papersplz: relation requires add, list, or remove")
+		return 2
+	}
+	switch args[0] {
+	case "add", "remove":
+		if len(args) != 4 {
+			fmt.Fprintf(stderr, "papersplz: relation %s requires PAPER, TYPE, and OTHER\n", args[0])
+			return 2
+		}
+		var (
+			paper model.Paper
+			err   error
+		)
+		if args[0] == "add" {
+			paper, err = catalog.AddRelationship(catalogHome, args[1], args[2], args[3], time.Now().UTC())
+		} else {
+			paper, err = catalog.RemoveRelationship(catalogHome, args[1], args[2], args[3], time.Now().UTC())
+		}
+		if err != nil {
+			fmt.Fprintf(stderr, "papersplz: relation %s: %v\n", args[0], err)
+			return 1
+		}
+		action := "added"
+		if args[0] == "remove" {
+			action = "removed"
+		}
+		fmt.Fprintf(stdout, "Relationship %s for %s.\n", action, paper.ID)
+		return 0
+	case "list":
+		if len(args) < 2 {
+			fmt.Fprintln(stderr, "papersplz: relation list requires PAPER")
+			return 2
+		}
+		flags := flag.NewFlagSet("papersplz relation list", flag.ContinueOnError)
+		flags.SetOutput(stderr)
+		flags.Usage = func() {}
+		jsonOutput := flags.Bool("json", false, "print JSON")
+		if err := flags.Parse(args[2:]); err != nil {
+			return 2
+		}
+		if flags.NArg() != 0 {
+			fmt.Fprintln(stderr, "papersplz: relation list accepts one PAPER")
+			return 2
+		}
+		relationships, err := catalog.ListRelationships(catalogHome, args[1])
+		if err != nil {
+			fmt.Fprintf(stderr, "papersplz: relation list: %v\n", err)
+			return 1
+		}
+		output := newRelationshipOutput(relationships)
+		if *jsonOutput {
+			if err := writeJSON(stdout, output); err != nil {
+				fmt.Fprintf(stderr, "papersplz: relation list: write JSON: %v\n", err)
+				return 1
+			}
+		} else {
+			writeRelationships(stdout, output)
+		}
+		return 0
+	default:
+		fmt.Fprintf(stderr, "papersplz: unknown relation command %q\n", args[0])
+		return 2
+	}
 }
 
 func runExport(catalogHome string, args []string, stdout, stderr io.Writer) int {
@@ -844,13 +914,18 @@ func runShow(catalogHome string, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "papersplz: show: %v\n", err)
 		return 1
 	}
+	relationships, err := catalog.ListRelationships(catalogHome, paper.ID)
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: show: %v\n", err)
+		return 1
+	}
 	if *jsonOutput {
-		if err := writeJSON(stdout, newShowOutput(paper)); err != nil {
+		if err := writeJSON(stdout, newShowOutput(paper, relationships)); err != nil {
 			fmt.Fprintf(stderr, "papersplz: show: write JSON: %v\n", err)
 			return 1
 		}
 	} else {
-		writeShow(stdout, paper)
+		writeShow(stdout, paper, relationships)
 	}
 	return 0
 }

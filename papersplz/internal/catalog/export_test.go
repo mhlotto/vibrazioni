@@ -21,6 +21,7 @@ func TestExportMetadataIncludesAllMetadataInDeterministicOrder(t *testing.T) {
 	alpha.SourceURL = "https://example.org/alpha.pdf"
 	alpha.Review = &model.Review{Text: "Strong result", CreatedAt: timestamp, UpdatedAt: timestamp}
 	alpha.Comments = []model.Comment{{ID: "cccc0000", Text: "Check proof", CreatedAt: timestamp, UpdatedAt: timestamp}}
+	alpha.Relationships = []model.Relationship{{Type: model.RelationshipCites, PaperID: zoo.ID}}
 	writeCatalogPaper(t, catalogPath, zoo)
 	writeCatalogPaper(t, catalogPath, alpha)
 

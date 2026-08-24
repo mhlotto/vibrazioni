@@ -13,18 +13,24 @@ type Catalog struct {
 }
 
 type Paper struct {
-	SchemaVersion int       `json:"schema_version"`
-	ID            string    `json:"id"`
-	Title         string    `json:"title"`
-	Authors       []string  `json:"authors"`
-	Source        string    `json:"source,omitempty"`
-	SourceURL     string    `json:"source_url,omitempty"`
-	AddedAt       time.Time `json:"added_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
-	File          File      `json:"file"`
-	Tags          []string  `json:"tags"`
-	Review        *Review   `json:"review"`
-	Comments      []Comment `json:"comments"`
+	SchemaVersion int            `json:"schema_version"`
+	ID            string         `json:"id"`
+	Title         string         `json:"title"`
+	Authors       []string       `json:"authors"`
+	Source        string         `json:"source,omitempty"`
+	SourceURL     string         `json:"source_url,omitempty"`
+	AddedAt       time.Time      `json:"added_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
+	File          File           `json:"file"`
+	Tags          []string       `json:"tags"`
+	Relationships []Relationship `json:"relationships,omitempty"`
+	Review        *Review        `json:"review"`
+	Comments      []Comment      `json:"comments"`
+}
+
+type Relationship struct {
+	Type    string `json:"type"`
+	PaperID string `json:"paper_id"`
 }
 
 type File struct {

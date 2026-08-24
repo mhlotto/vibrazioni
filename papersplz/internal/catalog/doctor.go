@@ -81,6 +81,28 @@ func Doctor(catalogPath string) []DoctorProblem {
 		problems = append(problems, inspectDoctorDirectory(papersPath, entry.Name(), paper.File.Name)...)
 	}
 	problems = append(problems, duplicateDoctorProblems(records)...)
+	problems = append(problems, relationshipDoctorProblems(records)...)
+	return problems
+}
+
+func relationshipDoctorProblems(records []doctorRecord) []DoctorProblem {
+	ids := make(map[string]struct{}, len(records))
+	for _, record := range records {
+		if identity.Valid(record.paper.ID) {
+			ids[record.paper.ID] = struct{}{}
+		}
+	}
+	problems := make([]DoctorProblem, 0)
+	for _, record := range records {
+		for _, relationship := range record.paper.Relationships {
+			if _, exists := ids[relationship.PaperID]; !exists && identity.Valid(relationship.PaperID) {
+				problems = append(problems, DoctorProblem{
+					Path:    filepath.Join(PapersDirectory, record.directory, store.RecordFilename),
+					Message: fmt.Sprintf("relationship %q references missing paper %s", relationship.Type, relationship.PaperID),
+				})
+			}
+		}
+	}
 	return problems
 }
 

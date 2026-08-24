@@ -191,7 +191,7 @@ func TestShowListAndPathCommands(t *testing.T) {
 		if err := json.Unmarshal([]byte(stdout), &object); err != nil {
 			t.Fatal(err)
 		}
-		if len(object) != 13 {
+		if len(object) != 14 {
 			t.Fatalf("show JSON keys = %v", object)
 		}
 	})
@@ -261,6 +261,78 @@ func TestShowListAndPathCommands(t *testing.T) {
 			t.Fatalf("status = %d, stdout = %q, stderr = %q, want %q", status, stdout, stderr, want)
 		}
 	})
+}
+
+func TestRelationCommandsShowAndExport(t *testing.T) {
+	catalogPath := filepath.Join(t.TempDir(), "catalog")
+	if err := catalog.Initialize(catalogPath, "Test", "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	created := time.Date(2026, 8, 24, 15, 31, 0, 0, time.UTC)
+	a := cliFixturePaper("aaaa000000000000", "Paper A", nil, nil, created)
+	b := cliFixturePaper("bbbb000000000000", "Paper B", nil, nil, created)
+	writeCLIFixturePaper(t, catalogPath, a)
+	writeCLIFixturePaper(t, catalogPath, b)
+
+	status, stdout, stderr := runForTest([]string{"--home", catalogPath, "relation", "add", "aaaa", "cites", "bbbb"}, nil)
+	if status != 0 || stderr != "" || !strings.Contains(stdout, "Relationship added") {
+		t.Fatalf("add: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "relation", "list", "aaaa"}, nil)
+	if status != 0 || stderr != "" || !strings.Contains(stdout, "cites") || !strings.Contains(stdout, "bbbb0000") || !strings.Contains(stdout, b.Title) {
+		t.Fatalf("human list: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "relation", "list", "bbbb", "--json"}, nil)
+	if status != 0 || stderr != "" {
+		t.Fatalf("list: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+	var relationships []RelationshipOutput
+	if err := json.Unmarshal([]byte(stdout), &relationships); err != nil {
+		t.Fatal(err)
+	}
+	want := []RelationshipOutput{{Type: model.RelationshipCitedBy, PaperID: a.ID, Title: a.Title}}
+	if !reflect.DeepEqual(relationships, want) {
+		t.Fatalf("relationships = %#v, want %#v", relationships, want)
+	}
+
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "show", "bbbb", "--json"}, nil)
+	if status != 0 || stderr != "" {
+		t.Fatalf("show: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+	var shown ShowOutput
+	if err := json.Unmarshal([]byte(stdout), &shown); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(shown.Relationships, want) {
+		t.Fatalf("show relationships = %#v", shown.Relationships)
+	}
+
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "export"}, nil)
+	if status != 0 || stderr != "" {
+		t.Fatalf("export: status = %d, stderr = %q", status, stderr)
+	}
+	var exported ExportOutput
+	if err := json.Unmarshal([]byte(stdout), &exported); err != nil {
+		t.Fatal(err)
+	}
+	if len(exported.Papers) != 2 || !reflect.DeepEqual(exported.Papers[0].Relationships, []model.Relationship{{Type: model.RelationshipCites, PaperID: b.ID}}) {
+		t.Fatalf("export relationships = %#v", exported.Papers)
+	}
+
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "relation", "remove", "bbbb", "cited-by", "aaaa"}, nil)
+	if status != 0 || stderr != "" || !strings.Contains(stdout, "Relationship removed") {
+		t.Fatalf("remove: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+	listed, err := catalog.ListRelationships(catalogPath, a.ID)
+	if err != nil || len(listed) != 0 {
+		t.Fatalf("relationships after removal = %#v, error = %v", listed, err)
+	}
+
+	status, _, stderr = runForTest([]string{"--home", catalogPath, "relation", "add", a.ID, "mentions", b.ID}, nil)
+	if status != 1 || !strings.Contains(stderr, "unknown relationship type") {
+		t.Fatalf("invalid type: status = %d, stderr = %q", status, stderr)
+	}
 }
 
 func TestOpenCommand(t *testing.T) {
@@ -952,6 +1024,8 @@ func TestCommandHelpDoesNotRequireCatalog(t *testing.T) {
 		{args: []string{"comment", "-h"}, want: []string{"Usage: papersplz comment", "add PAPER", "edit PAPER"}},
 		{args: []string{"tag", "--help"}, want: []string{"Usage: papersplz tag", "add PAPER", "list PAPER"}},
 		{args: []string{"tags", "--help"}, want: []string{"Usage: papersplz tags", "count", "--json"}},
+		{args: []string{"relation", "--help"}, want: []string{"Usage: papersplz relation", "related-to", "superseded-by"}},
+		{args: []string{"relation", "list", "--help"}, want: []string{"Usage: papersplz relation list", "--json"}},
 		{args: []string{"review", "show", "--help"}, want: []string{"Usage: papersplz review show", "--json"}},
 		{args: []string{"comment", "show", "--help"}, want: []string{"Usage: papersplz comment show", "--json"}},
 		{args: []string{"tag", "list", "--help"}, want: []string{"Usage: papersplz tag list", "--json"}},

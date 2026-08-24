@@ -112,6 +112,15 @@ Commands:
 List all catalog tags with paper usage counts. Results are ordered by count
 descending, then tag name ascending.
 `
+	relationHelp = `Usage: papersplz relation COMMAND [ARGUMENTS]
+
+Commands:
+  add PAPER TYPE OTHER
+  list PAPER [--json]
+  remove PAPER TYPE OTHER
+
+Types: related-to, cites, cited-by, supersedes, superseded-by
+`
 )
 
 var topLevelHelp = map[string]string{
@@ -120,7 +129,7 @@ var topLevelHelp = map[string]string{
 	"info":   infoHelp,
 	"search": searchHelp, "export": exportHelp, "doctor": doctorHelp,
 	"review": reviewHelp, "comment": commentHelp, "tag": tagHelp,
-	"tags": tagsHelp,
+	"tags": tagsHelp, "relation": relationHelp,
 }
 
 var nestedHelp = map[string]map[string]string{
@@ -141,6 +150,11 @@ var nestedHelp = map[string]map[string]string{
 		"add":    "Usage: papersplz tag add PAPER TAG...\n",
 		"remove": "Usage: papersplz tag remove PAPER TAG...\n",
 		"list":   "Usage: papersplz tag list PAPER [--json]\n",
+	},
+	"relation": {
+		"add":    "Usage: papersplz relation add PAPER TYPE OTHER\n",
+		"list":   "Usage: papersplz relation list PAPER [--json]\n",
+		"remove": "Usage: papersplz relation remove PAPER TYPE OTHER\n",
 	},
 }
 
