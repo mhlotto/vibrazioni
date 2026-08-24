@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/mhlotto/vibrazioni/papersplz/internal/catalog"
@@ -15,7 +16,7 @@ const usage = `Usage: papersplz [--home PATH] COMMAND [ARGUMENTS]
 
 Commands:
   init PATH       create a catalog
-  add             add a paper (not yet implemented)
+  add SOURCE      add a local paper
   remove          remove a paper (not yet implemented)
   show            show a paper (not yet implemented)
   path            print a paper's stored path (not yet implemented)
@@ -71,13 +72,65 @@ func Run(args []string, stdout, stderr io.Writer, lookupEnv func(string) (string
 		return 2
 	}
 
-	if _, err := catalog.ResolveHome(*home, lookupEnv); err != nil {
+	catalogHome, err := catalog.ResolveHome(*home, lookupEnv)
+	if err != nil {
 		fmt.Fprintf(stderr, "papersplz: %v\n", err)
 		return 1
+	}
+	if command == "add" {
+		return runAdd(catalogHome, commandArgs, stdout, stderr)
 	}
 
 	fmt.Fprintf(stderr, "papersplz: %s is not implemented\n", command)
 	return 1
+}
+
+type repeatedStrings []string
+
+func (values *repeatedStrings) String() string { return strings.Join(*values, ",") }
+
+func (values *repeatedStrings) Set(value string) error {
+	*values = append(*values, value)
+	return nil
+}
+
+func runAdd(catalogHome string, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "papersplz: add requires SOURCE")
+		return 2
+	}
+	sourcePath := args[0]
+	flags := flag.NewFlagSet("papersplz add", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	flags.Usage = func() {}
+	title := flags.String("title", "", "paper title (required)")
+	source := flags.String("source", "", "bibliographic source")
+	var authors, tags repeatedStrings
+	flags.Var(&authors, "author", "author name (repeatable)")
+	flags.Var(&tags, "tag", "tag (repeatable)")
+	if err := flags.Parse(args[1:]); err != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(stderr, "papersplz: add accepts one SOURCE")
+		return 2
+	}
+	if *title == "" {
+		fmt.Fprintln(stderr, "papersplz: add requires --title TITLE")
+		return 2
+	}
+	paper, err := catalog.AddLocal(catalogHome, sourcePath, catalog.AddOptions{
+		Title:   *title,
+		Authors: authors,
+		Source:  *source,
+		Tags:    tags,
+	}, time.Now().UTC())
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: add: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "Added %s %s\n", paper.ID, paper.Title)
+	return 0
 }
 
 func runInit(args []string, stdout, stderr io.Writer) int {

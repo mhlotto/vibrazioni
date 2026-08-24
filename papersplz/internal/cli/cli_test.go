@@ -82,6 +82,39 @@ func TestInitDoesNotRequireCatalogHome(t *testing.T) {
 	}
 }
 
+func TestAddLocalCommand(t *testing.T) {
+	catalogPath := filepath.Join(t.TempDir(), "catalog")
+	if status, _, stderr := runForTest([]string{"init", catalogPath, "--name", "Test"}, nil); status != 0 {
+		t.Fatalf("init failed: %s", stderr)
+	}
+	sourcePath := filepath.Join(t.TempDir(), "paper.pdf")
+	if err := os.WriteFile(sourcePath, []byte("paper contents"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	status, stdout, stderr := runForTest([]string{
+		"--home", catalogPath, "add", sourcePath,
+		"--title", "Paper", "--author", "Alice", "--author", "Bob",
+		"--source", "Journal", "--tag", "Math", "--tag", "To-Read",
+	}, nil)
+	if status != 0 {
+		t.Fatalf("Run() status = %d, stderr = %q", status, stderr)
+	}
+	if !strings.HasPrefix(stdout, "Added ") || stderr != "" {
+		t.Fatalf("stdout = %q, stderr = %q", stdout, stderr)
+	}
+	entries, err := os.ReadDir(filepath.Join(catalogPath, "papers"))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("paper directories = %v, error = %v", entries, err)
+	}
+	paper, err := store.ReadPaper(filepath.Join(catalogPath, "papers", entries[0].Name(), store.RecordFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(paper.Authors, ",") != "Alice,Bob" || strings.Join(paper.Tags, ",") != "math,to-read" {
+		t.Fatalf("paper metadata = %#v", paper)
+	}
+}
+
 func TestBasicErrorsUseStderr(t *testing.T) {
 	tests := []struct {
 		name string
