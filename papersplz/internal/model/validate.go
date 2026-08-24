@@ -6,12 +6,13 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/mhlotto/vibrazioni/papersplz/internal/identity"
 )
 
 var ErrUnsupportedSchema = errors.New("unsupported schema version")
 
 var (
-	hexIDPattern  = regexp.MustCompile(`^[0-9a-f]+$`)
 	sha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	tagPattern    = regexp.MustCompile(`^[a-z0-9][a-z0-9._+-]*$`)
 )
@@ -33,7 +34,7 @@ func ValidatePaper(p Paper) error {
 	if err := validateSchema(p.SchemaVersion); err != nil {
 		return err
 	}
-	if !hexIDPattern.MatchString(p.ID) {
+	if !identity.Valid(p.ID) {
 		return errors.New("paper id must be lowercase hexadecimal")
 	}
 	if strings.TrimSpace(p.Title) == "" {
@@ -127,7 +128,7 @@ func validateReview(review Review) error {
 }
 
 func validateComment(comment Comment) error {
-	if !hexIDPattern.MatchString(comment.ID) {
+	if !identity.Valid(comment.ID) {
 		return errors.New("id must be lowercase hexadecimal")
 	}
 	if strings.TrimSpace(comment.Text) == "" {
