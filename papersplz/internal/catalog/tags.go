@@ -3,6 +3,7 @@ package catalog
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"time"
 
@@ -12,6 +13,12 @@ import (
 type TagUsage struct {
 	Tag   string
 	Count int
+}
+
+var readingStatusTags = map[string]struct{}{
+	"to-read": {},
+	"reading": {},
+	"read":    {},
 }
 
 // ListTagUsage returns every distinct catalog tag ordered by usage count
@@ -96,6 +103,30 @@ func RemoveTags(catalogPath, selector string, tags []string, updatedAt time.Time
 
 func ListTags(catalogPath, selector string) (model.Paper, error) {
 	return LoadPaper(catalogPath, selector)
+}
+
+// SetReadingStatus replaces the conventional reading-status tags with tag.
+// Other tags are preserved.
+func SetReadingStatus(catalogPath, selector, tag string, updatedAt time.Time) (model.Paper, error) {
+	if _, ok := readingStatusTags[tag]; !ok {
+		return model.Paper{}, fmt.Errorf("invalid reading-status tag %q", tag)
+	}
+	paper, err := LoadPaper(catalogPath, selector)
+	if err != nil {
+		return model.Paper{}, err
+	}
+	tags := make([]string, 0, len(paper.Tags)+1)
+	for _, existing := range paper.Tags {
+		if _, status := readingStatusTags[existing]; !status {
+			tags = append(tags, existing)
+		}
+	}
+	tags = append(tags, tag)
+	if reflect.DeepEqual(tags, paper.Tags) {
+		return paper, nil
+	}
+	paper.Tags = tags
+	return writeTags(catalogPath, paper, updatedAt)
 }
 
 func requireTags(tags []string) ([]string, error) {

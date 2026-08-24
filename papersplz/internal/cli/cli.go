@@ -32,6 +32,7 @@ Commands:
   review          show, set, edit, or remove a review
   comment         add, list, show, edit, or remove comments
   tag             add, remove, or list paper tags
+  mark            set a paper's reading status
   tags            list catalog-wide tag usage
   relation        add, list, or remove paper relationships
   search          search paper metadata
@@ -41,7 +42,7 @@ Commands:
 
 var catalogCommands = map[string]struct{}{
 	"add": {}, "edit": {}, "remove": {}, "show": {}, "path": {}, "open": {}, "list": {}, "info": {},
-	"review": {}, "comment": {}, "tag": {}, "tags": {}, "relation": {}, "search": {}, "export": {}, "doctor": {},
+	"review": {}, "comment": {}, "tag": {}, "mark": {}, "tags": {}, "relation": {}, "search": {}, "export": {}, "doctor": {},
 }
 
 // Run executes the command-line interface and returns a process exit status.
@@ -121,6 +122,8 @@ func run(args []string, stdin io.Reader, interactive bool, stdout, stderr io.Wri
 		return runOpen(catalogHome, commandArgs, stdout, stderr)
 	case "tag":
 		return runTag(catalogHome, commandArgs, stdout, stderr)
+	case "mark":
+		return runMark(catalogHome, commandArgs, stdout, stderr)
 	case "tags":
 		return runTags(catalogHome, commandArgs, stdout, stderr)
 	case "relation":
@@ -139,6 +142,30 @@ func run(args []string, stdin io.Reader, interactive bool, stdout, stderr io.Wri
 
 	fmt.Fprintf(stderr, "papersplz: %s is not implemented\n", command)
 	return 1
+}
+
+func runMark(catalogHome string, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 2 {
+		fmt.Fprintln(stderr, "papersplz: mark requires unread, reading, or read followed by PAPER; see 'papersplz mark --help'")
+		return 2
+	}
+	statusTags := map[string]string{
+		"unread":  "to-read",
+		"reading": "reading",
+		"read":    "read",
+	}
+	tag, ok := statusTags[args[0]]
+	if !ok {
+		fmt.Fprintf(stderr, "papersplz: unknown mark command %q; see 'papersplz mark --help'\n", args[0])
+		return 2
+	}
+	paper, err := catalog.SetReadingStatus(catalogHome, args[1], tag, time.Now().UTC())
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: mark %s: %v\n", args[0], err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "Marked %s as %s.\n", paper.ID, args[0])
+	return 0
 }
 
 func runRelation(catalogHome string, args []string, stdout, stderr io.Writer) int {

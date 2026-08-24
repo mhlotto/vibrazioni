@@ -164,12 +164,15 @@ does not guess an editor.
 Reading status uses the conventional tags `to-read`, `reading`, and `read`:
 
 ```sh
-pplz tag remove PAPER_ID to-read
-pplz tag add PAPER_ID reading
+pplz mark unread PAPER_ID
+pplz mark reading PAPER_ID
+pplz mark read PAPER_ID
 pplz list --tag reading
 ```
 
-These are ordinary, user-managed tags rather than a separate status field.
+Each `mark` command replaces the other conventional reading-status tags while
+preserving unrelated tags. These remain ordinary tags rather than a separate
+status field, so the existing `tag` commands continue to work with them.
 
 ## Paper relationships
 

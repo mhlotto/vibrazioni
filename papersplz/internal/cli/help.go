@@ -108,6 +108,13 @@ Commands:
   remove PAPER TAG...
   list PAPER [--json]
 `
+	markHelp = `Usage: papersplz mark COMMAND PAPER
+
+Commands:
+  unread PAPER
+  reading PAPER
+  read PAPER
+`
 	tagsHelp = `Usage: papersplz tags [--json]
 
 List all catalog tags with paper usage counts. Results are ordered by count
@@ -129,7 +136,7 @@ var topLevelHelp = map[string]string{
 	"show": showHelp, "path": pathHelp, "open": openHelp, "list": listHelp,
 	"info":   infoHelp,
 	"search": searchHelp, "export": exportHelp, "doctor": doctorHelp,
-	"review": reviewHelp, "comment": commentHelp, "tag": tagHelp,
+	"review": reviewHelp, "comment": commentHelp, "tag": tagHelp, "mark": markHelp,
 	"tags": tagsHelp, "relation": relationHelp,
 }
 

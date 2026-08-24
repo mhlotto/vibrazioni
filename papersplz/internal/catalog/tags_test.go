@@ -91,6 +91,62 @@ func TestIdempotentTagMutationPreservesUpdatedAt(t *testing.T) {
 	}
 }
 
+func TestSetReadingStatus(t *testing.T) {
+	catalogPath := newTestCatalog(t)
+	paper := testInspectionPaper("a81f32c991b7", "Reading Paper", nil, []string{"topology", "to-read", "read"})
+	writeCatalogPaper(t, catalogPath, paper)
+
+	statuses := []struct {
+		name string
+		tag  string
+	}{
+		{name: "unread", tag: "to-read"},
+		{name: "reading", tag: "reading"},
+		{name: "read", tag: "read"},
+	}
+	updatedAt := paper.UpdatedAt
+	for index, status := range statuses {
+		updatedAt = updatedAt.Add(time.Hour)
+		updated, err := SetReadingStatus(catalogPath, paper.ID[:6], status.tag, updatedAt)
+		if err != nil {
+			t.Fatalf("SetReadingStatus(%s) error = %v", status.name, err)
+		}
+		want := []string{"topology", status.tag}
+		if !reflect.DeepEqual(updated.Tags, want) {
+			t.Fatalf("SetReadingStatus(%s) tags = %v, want %v", status.name, updated.Tags, want)
+		}
+		if !updated.UpdatedAt.Equal(updatedAt) {
+			t.Fatalf("SetReadingStatus(%s) updated_at = %v, want %v", status.name, updated.UpdatedAt, updatedAt)
+		}
+		if index == len(statuses)-1 {
+			unchanged, err := SetReadingStatus(catalogPath, paper.ID, status.tag, updatedAt.Add(time.Hour))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !unchanged.UpdatedAt.Equal(updatedAt) {
+				t.Fatalf("repeated mark changed updated_at to %v", unchanged.UpdatedAt)
+			}
+		}
+	}
+}
+
+func TestSetReadingStatusRejectsUnknownTag(t *testing.T) {
+	catalogPath := newTestCatalog(t)
+	paper := testInspectionPaper("a81f32c991b7", "Reading Paper", nil, []string{"topology"})
+	writeCatalogPaper(t, catalogPath, paper)
+
+	if _, err := SetReadingStatus(catalogPath, paper.ID, "finished", time.Now()); err == nil {
+		t.Fatal("SetReadingStatus accepted an unknown status tag")
+	}
+	stored, err := LoadPaper(catalogPath, paper.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(stored.Tags, paper.Tags) {
+		t.Fatalf("invalid status changed tags to %v", stored.Tags)
+	}
+}
+
 func TestListTagUsageCountsAndOrders(t *testing.T) {
 	catalogPath := newTestCatalog(t)
 	papers := []struct {

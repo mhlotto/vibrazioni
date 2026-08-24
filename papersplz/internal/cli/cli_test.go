@@ -678,6 +678,42 @@ func TestTagCommands(t *testing.T) {
 	}
 }
 
+func TestMarkCommands(t *testing.T) {
+	catalogPath := filepath.Join(t.TempDir(), "catalog")
+	if err := catalog.Initialize(catalogPath, "Test", "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	paper := cliFixturePaper("abcd000000000000", "Reading Paper", nil, []string{"topology", "reading", "read"}, time.Now().UTC())
+	writeCLIFixturePaper(t, catalogPath, paper)
+
+	for _, test := range []struct {
+		command string
+		tag     string
+	}{
+		{command: "unread", tag: "to-read"},
+		{command: "reading", tag: "reading"},
+		{command: "read", tag: "read"},
+	} {
+		status, stdout, stderr := runForTest([]string{"--home", catalogPath, "mark", test.command, "abcd"}, nil)
+		if status != 0 || stderr != "" || stdout != "Marked "+paper.ID+" as "+test.command+".\n" {
+			t.Fatalf("mark %s: status = %d, stdout = %q, stderr = %q", test.command, status, stdout, stderr)
+		}
+		stored, err := catalog.LoadPaper(catalogPath, paper.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"topology", test.tag}
+		if !reflect.DeepEqual(stored.Tags, want) {
+			t.Fatalf("mark %s tags = %v, want %v", test.command, stored.Tags, want)
+		}
+	}
+
+	status, stdout, stderr := runForTest([]string{"--home", catalogPath, "mark", "finished", "abcd"}, nil)
+	if status != 2 || stdout != "" || !strings.Contains(stderr, "unknown mark command") || !strings.Contains(stderr, "mark --help") {
+		t.Fatalf("invalid mark: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+}
+
 func TestReadingStatusTagWorkflow(t *testing.T) {
 	catalogPath := filepath.Join(t.TempDir(), "catalog")
 	if err := catalog.Initialize(catalogPath, "Reading", "", time.Now()); err != nil {
@@ -1109,6 +1145,7 @@ func TestCommandHelpDoesNotRequireCatalog(t *testing.T) {
 		{args: []string{"review", "--help"}, want: []string{"Usage: papersplz review", "show PAPER", "set PAPER"}},
 		{args: []string{"comment", "-h"}, want: []string{"Usage: papersplz comment", "add PAPER", "edit PAPER"}},
 		{args: []string{"tag", "--help"}, want: []string{"Usage: papersplz tag", "add PAPER", "list PAPER"}},
+		{args: []string{"mark", "--help"}, want: []string{"Usage: papersplz mark", "unread PAPER", "reading PAPER", "read PAPER"}},
 		{args: []string{"tags", "--help"}, want: []string{"Usage: papersplz tags", "count", "--json"}},
 		{args: []string{"relation", "--help"}, want: []string{"Usage: papersplz relation", "related-to", "superseded-by"}},
 		{args: []string{"relation", "list", "--help"}, want: []string{"Usage: papersplz relation list", "--json"}},
