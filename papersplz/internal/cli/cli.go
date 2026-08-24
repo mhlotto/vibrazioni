@@ -31,13 +31,14 @@ Commands:
   review          show, set, edit, or remove a review
   comment         add, list, show, edit, or remove comments
   tag             add, remove, or list paper tags
+  tags            list catalog-wide tag usage
   search          search paper metadata
   doctor          check catalog consistency
 `
 
 var catalogCommands = map[string]struct{}{
 	"add": {}, "edit": {}, "remove": {}, "show": {}, "path": {}, "list": {}, "info": {},
-	"review": {}, "comment": {}, "tag": {}, "search": {}, "doctor": {},
+	"review": {}, "comment": {}, "tag": {}, "tags": {}, "search": {}, "doctor": {},
 }
 
 // Run executes the command-line interface and returns a process exit status.
@@ -115,6 +116,8 @@ func run(args []string, stdin io.Reader, interactive bool, stdout, stderr io.Wri
 		return runPath(catalogHome, commandArgs, stdout, stderr)
 	case "tag":
 		return runTag(catalogHome, commandArgs, stdout, stderr)
+	case "tags":
+		return runTags(catalogHome, commandArgs, stdout, stderr)
 	case "review":
 		return runReview(catalogHome, commandArgs, stdin, stdout, stderr, lookupEnv)
 	case "comment":
@@ -127,6 +130,35 @@ func run(args []string, stdin io.Reader, interactive bool, stdout, stderr io.Wri
 
 	fmt.Fprintf(stderr, "papersplz: %s is not implemented\n", command)
 	return 1
+}
+
+func runTags(catalogHome string, args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("papersplz tags", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	flags.Usage = func() {}
+	jsonOutput := flags.Bool("json", false, "print JSON")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprintln(stderr, "papersplz: tags does not accept arguments")
+		return 2
+	}
+	usage, err := catalog.ListTagUsage(catalogHome)
+	if err != nil {
+		fmt.Fprintf(stderr, "papersplz: tags: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := writeJSON(stdout, newTagUsageOutput(usage)); err != nil {
+			fmt.Fprintf(stderr, "papersplz: tags: write JSON: %v\n", err)
+			return 1
+		}
+	} else if err := writeTagUsage(stdout, usage); err != nil {
+		fmt.Fprintf(stderr, "papersplz: tags: write output: %v\n", err)
+		return 1
+	}
+	return 0
 }
 
 func runEdit(catalogHome string, args []string, stdout, stderr io.Writer) int {

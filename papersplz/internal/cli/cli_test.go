@@ -317,6 +317,59 @@ func TestEditCommandUpdatesMetadataWithPrefix(t *testing.T) {
 	}
 }
 
+func TestTagsCommandCountsOrderingJSONAndEmptyCatalog(t *testing.T) {
+	catalogPath := filepath.Join(t.TempDir(), "catalog")
+	if err := catalog.Initialize(catalogPath, "Tags", "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	status, stdout, stderr := runForTest([]string{"--home", catalogPath, "tags"}, nil)
+	if status != 0 || stderr != "" || stdout != "No tags.\n" {
+		t.Fatalf("empty human: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "tags", "--json"}, nil)
+	if status != 0 || stderr != "" || strings.TrimSpace(stdout) != "[]" {
+		t.Fatalf("empty JSON: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+
+	timestamp := time.Date(2026, 8, 24, 15, 31, 0, 0, time.UTC)
+	for _, paper := range []model.Paper{
+		cliFixturePaper("aaaa000000000000", "One", nil, []string{"topology", "homotopy", "to-read"}, timestamp),
+		cliFixturePaper("bbbb000000000000", "Two", nil, []string{"topology", "algebraic-topology", "to-read"}, timestamp),
+		cliFixturePaper("cccc000000000000", "Three", nil, []string{"topology", "algebraic-topology", "homotopy"}, timestamp),
+	} {
+		writeCLIFixturePaper(t, catalogPath, paper)
+	}
+
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "tags"}, nil)
+	if status != 0 || stderr != "" {
+		t.Fatalf("human: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	wantLines := [][]string{{"topology", "3"}, {"algebraic-topology", "2"}, {"homotopy", "2"}, {"to-read", "2"}}
+	if len(lines) != len(wantLines) {
+		t.Fatalf("human lines = %q", lines)
+	}
+	for i := range lines {
+		if fields := strings.Fields(lines[i]); !reflect.DeepEqual(fields, wantLines[i]) {
+			t.Fatalf("line %d fields = %v, want %v; output = %q", i, fields, wantLines[i], stdout)
+		}
+	}
+
+	status, stdout, stderr = runForTest([]string{"--home", catalogPath, "tags", "--json"}, nil)
+	if status != 0 || stderr != "" {
+		t.Fatalf("JSON: status = %d, stdout = %q, stderr = %q", status, stdout, stderr)
+	}
+	var output []TagUsageOutput
+	if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+		t.Fatal(err)
+	}
+	want := []TagUsageOutput{{Tag: "topology", Count: 3}, {Tag: "algebraic-topology", Count: 2}, {Tag: "homotopy", Count: 2}, {Tag: "to-read", Count: 2}}
+	if !reflect.DeepEqual(output, want) {
+		t.Fatalf("JSON = %#v, want %#v", output, want)
+	}
+}
+
 func TestRemoveCommandConfirmation(t *testing.T) {
 	t.Run("non-interactive requires yes", func(t *testing.T) {
 		catalogPath, paper := removeCLIFixture(t)
@@ -790,6 +843,7 @@ func TestCommandHelpDoesNotRequireCatalog(t *testing.T) {
 		{args: []string{"review", "--help"}, want: []string{"Usage: papersplz review", "show PAPER", "set PAPER"}},
 		{args: []string{"comment", "-h"}, want: []string{"Usage: papersplz comment", "add PAPER", "edit PAPER"}},
 		{args: []string{"tag", "--help"}, want: []string{"Usage: papersplz tag", "add PAPER", "list PAPER"}},
+		{args: []string{"tags", "--help"}, want: []string{"Usage: papersplz tags", "count", "--json"}},
 		{args: []string{"review", "show", "--help"}, want: []string{"Usage: papersplz review show", "--json"}},
 		{args: []string{"comment", "show", "--help"}, want: []string{"Usage: papersplz comment show", "--json"}},
 		{args: []string{"tag", "list", "--help"}, want: []string{"Usage: papersplz tag list", "--json"}},

@@ -126,10 +126,12 @@ pplz comment remove PAPER_ID COMMENT_ID
 pplz tag add PAPER_ID topology to-read
 pplz tag list PAPER_ID
 pplz tag remove PAPER_ID to-read
+pplz tags
 ```
 
-Tags are normalized to lowercase. Editing requires `EDITOR`; the program does
-not guess an editor.
+Tags are normalized to lowercase. `pplz tags` lists catalog-wide usage by count
+descending, then tag name ascending. Editing requires `EDITOR`; the program
+does not guess an editor.
 
 ## Search
 
@@ -147,7 +149,7 @@ Search performs a linear metadata scan and creates no index.
 
 ## JSON output
 
-Structured output is available for `info`, `list`, `show`, `search`,
+Structured output is available for `info`, `list`, `show`, `search`, `tags`,
 `review show`, `comment list`, `comment show`, and `tag list`:
 
 ```sh
@@ -159,6 +161,7 @@ pplz review show PAPER_ID --json
 pplz comment list PAPER_ID --json
 pplz comment show PAPER_ID COMMENT_ID --json
 pplz tag list PAPER_ID --json
+pplz tags --json
 ```
 
 Diagnostics go to stderr and normal results to stdout. `path` prints only the

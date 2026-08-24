@@ -90,3 +90,42 @@ func TestIdempotentTagMutationPreservesUpdatedAt(t *testing.T) {
 		t.Fatalf("idempotent remove changed updated_at to %v", unchanged.UpdatedAt)
 	}
 }
+
+func TestListTagUsageCountsAndOrders(t *testing.T) {
+	catalogPath := newTestCatalog(t)
+	papers := []struct {
+		id   string
+		tags []string
+	}{
+		{id: "aaaa0000", tags: []string{"topology", "to-read", "homotopy"}},
+		{id: "bbbb0000", tags: []string{"topology", "to-read", "algebraic-topology"}},
+		{id: "cccc0000", tags: []string{"topology", "homotopy", "algebraic-topology"}},
+	}
+	for _, fixture := range papers {
+		writeCatalogPaper(t, catalogPath, testInspectionPaper(fixture.id, fixture.id, nil, fixture.tags))
+	}
+
+	got, err := ListTagUsage(catalogPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []TagUsage{
+		{Tag: "topology", Count: 3},
+		{Tag: "algebraic-topology", Count: 2},
+		{Tag: "homotopy", Count: 2},
+		{Tag: "to-read", Count: 2},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ListTagUsage() = %#v, want %#v", got, want)
+	}
+}
+
+func TestListTagUsageEmptyCatalog(t *testing.T) {
+	got, err := ListTagUsage(newTestCatalog(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || len(got) != 0 {
+		t.Fatalf("ListTagUsage() = %#v, want empty non-nil slice", got)
+	}
+}

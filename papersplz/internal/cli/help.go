@@ -95,6 +95,11 @@ Commands:
   remove PAPER TAG...
   list PAPER [--json]
 `
+	tagsHelp = `Usage: papersplz tags [--json]
+
+List all catalog tags with paper usage counts. Results are ordered by count
+descending, then tag name ascending.
+`
 )
 
 var topLevelHelp = map[string]string{
@@ -103,6 +108,7 @@ var topLevelHelp = map[string]string{
 	"info":   infoHelp,
 	"search": searchHelp, "doctor": doctorHelp,
 	"review": reviewHelp, "comment": commentHelp, "tag": tagHelp,
+	"tags": tagsHelp,
 }
 
 var nestedHelp = map[string]map[string]string{

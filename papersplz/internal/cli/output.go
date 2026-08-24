@@ -54,6 +54,11 @@ type TagListOutput struct {
 	Tags    []string `json:"tags"`
 }
 
+type TagUsageOutput struct {
+	Tag   string `json:"tag"`
+	Count int    `json:"count"`
+}
+
 type ReviewOutput struct {
 	Text      string    `json:"text"`
 	CreatedAt time.Time `json:"created_at"`
@@ -177,6 +182,28 @@ func writeTags(writer io.Writer, tags []string) {
 	for _, tag := range tags {
 		fmt.Fprintln(writer, tag)
 	}
+}
+
+func newTagUsageOutput(usage []catalog.TagUsage) []TagUsageOutput {
+	output := make([]TagUsageOutput, len(usage))
+	for i, item := range usage {
+		output[i] = TagUsageOutput{Tag: item.Tag, Count: item.Count}
+	}
+	return output
+}
+
+func writeTagUsage(writer io.Writer, usage []catalog.TagUsage) error {
+	if len(usage) == 0 {
+		_, err := fmt.Fprintln(writer, "No tags.")
+		return err
+	}
+	table := tabwriter.NewWriter(writer, 0, 4, 2, ' ', 0)
+	for _, item := range usage {
+		if _, err := fmt.Fprintf(table, "%s\t%d\n", item.Tag, item.Count); err != nil {
+			return err
+		}
+	}
+	return table.Flush()
 }
 
 func writeReview(writer io.Writer, review model.Review) {
