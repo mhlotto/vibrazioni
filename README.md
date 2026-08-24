@@ -6,6 +6,7 @@ Simple tooling repo (mostly vibe play)
 - **gosec-json**: CLI-friendly extraction for gosec JSON reports plus a skill template and copy script.
 - **govulncheck-json**: CLI-friendly extraction for govulncheck JSON output plus a skill template and copy script.
 - **plan-doc**: Plan document manager for PLAN####.md files, a sample plan format, and a skill template with copy script.
+- **papersplz**: Local-first Go CLI for cataloging papers and their metadata in self-contained, human-readable catalogs.
 - **git-tools**: Small git helpers like formatting untracked files from git status into a git add command.
 - **html-scripttags**: Extract HTML script tags with attribute filtering, tests, and a skill template with copy script.
 - **kiln**: Python MVP static site generator with YAML content, Jinja templates, local asset/package policy, serving, packaging, and examples.
