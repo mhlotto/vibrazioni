@@ -1,0 +1,157 @@
+package model
+
+import (
+	"errors"
+	"fmt"
+	"regexp"
+	"strings"
+	"time"
+)
+
+var ErrUnsupportedSchema = errors.New("unsupported schema version")
+
+var (
+	hexIDPattern  = regexp.MustCompile(`^[0-9a-f]+$`)
+	sha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	tagPattern    = regexp.MustCompile(`^[a-z0-9][a-z0-9._+-]*$`)
+)
+
+func ValidateCatalog(c Catalog) error {
+	if err := validateSchema(c.SchemaVersion); err != nil {
+		return err
+	}
+	if strings.TrimSpace(c.Name) == "" {
+		return errors.New("catalog name is required")
+	}
+	if err := validateTime("catalog created_at", c.CreatedAt); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ValidatePaper(p Paper) error {
+	if err := validateSchema(p.SchemaVersion); err != nil {
+		return err
+	}
+	if !hexIDPattern.MatchString(p.ID) {
+		return errors.New("paper id must be lowercase hexadecimal")
+	}
+	if strings.TrimSpace(p.Title) == "" {
+		return errors.New("paper title is required")
+	}
+	if err := validateTime("paper added_at", p.AddedAt); err != nil {
+		return err
+	}
+	if err := validateTime("paper updated_at", p.UpdatedAt); err != nil {
+		return err
+	}
+	if p.UpdatedAt.Before(p.AddedAt) {
+		return errors.New("paper updated_at precedes added_at")
+	}
+	if err := validateFile(p.File); err != nil {
+		return err
+	}
+	for i, author := range p.Authors {
+		if strings.TrimSpace(author) == "" {
+			return fmt.Errorf("author %d is empty", i)
+		}
+	}
+	seenTags := make(map[string]struct{}, len(p.Tags))
+	for _, tag := range p.Tags {
+		if !tagPattern.MatchString(tag) {
+			return fmt.Errorf("invalid tag %q", tag)
+		}
+		if _, exists := seenTags[tag]; exists {
+			return fmt.Errorf("duplicate tag %q", tag)
+		}
+		seenTags[tag] = struct{}{}
+	}
+	if p.Review != nil {
+		if err := validateReview(*p.Review); err != nil {
+			return err
+		}
+	}
+	seenComments := make(map[string]struct{}, len(p.Comments))
+	for i, comment := range p.Comments {
+		if err := validateComment(comment); err != nil {
+			return fmt.Errorf("comment %d: %w", i, err)
+		}
+		if _, exists := seenComments[comment.ID]; exists {
+			return fmt.Errorf("duplicate comment id %q", comment.ID)
+		}
+		seenComments[comment.ID] = struct{}{}
+	}
+	return nil
+}
+
+func validateSchema(version int) error {
+	if version == 0 {
+		return errors.New("schema_version is required")
+	}
+	if version != SchemaVersion {
+		return fmt.Errorf("%w: %d", ErrUnsupportedSchema, version)
+	}
+	return nil
+}
+
+func validateFile(file File) error {
+	if file.Name == "" {
+		return errors.New("file name is required")
+	}
+	if file.OriginalName == "" {
+		return errors.New("file original_name is required")
+	}
+	if file.Size < 0 {
+		return errors.New("file size must not be negative")
+	}
+	if !sha256Pattern.MatchString(file.SHA256) {
+		return errors.New("file sha256 must be 64 lowercase hexadecimal characters")
+	}
+	return nil
+}
+
+func validateReview(review Review) error {
+	if strings.TrimSpace(review.Text) == "" {
+		return errors.New("review text is required")
+	}
+	if err := validateTime("review created_at", review.CreatedAt); err != nil {
+		return err
+	}
+	if err := validateTime("review updated_at", review.UpdatedAt); err != nil {
+		return err
+	}
+	if review.UpdatedAt.Before(review.CreatedAt) {
+		return errors.New("review updated_at precedes created_at")
+	}
+	return nil
+}
+
+func validateComment(comment Comment) error {
+	if !hexIDPattern.MatchString(comment.ID) {
+		return errors.New("id must be lowercase hexadecimal")
+	}
+	if strings.TrimSpace(comment.Text) == "" {
+		return errors.New("text is required")
+	}
+	if err := validateTime("created_at", comment.CreatedAt); err != nil {
+		return err
+	}
+	if err := validateTime("updated_at", comment.UpdatedAt); err != nil {
+		return err
+	}
+	if comment.UpdatedAt.Before(comment.CreatedAt) {
+		return errors.New("updated_at precedes created_at")
+	}
+	return nil
+}
+
+func validateTime(field string, value time.Time) error {
+	if value.IsZero() {
+		return fmt.Errorf("%s is required", field)
+	}
+	_, offset := value.Zone()
+	if offset != 0 {
+		return fmt.Errorf("%s must be UTC", field)
+	}
+	return nil
+}
