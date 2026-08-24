@@ -88,6 +88,8 @@ does not scrape web pages.
 ```sh
 pplz list
 pplz list --tag topology --author alice
+pplz list --tag topology --sort author --limit 20
+pplz list --sort added --reverse
 pplz info
 pplz show PAPER_ID
 pplz edit PAPER_ID --title "Corrected title" --author "Alice Smith"
@@ -97,6 +99,12 @@ xdg-open "$(pplz path PAPER_ID)"  # common Unix desktops
 ```
 
 Paper IDs may be replaced by an unambiguous prefix.
+
+`list` sorts by title ascending by default. `--sort added` orders oldest first,
+and `--sort author` orders by the complete author list with papers that have no
+authors last. `--reverse` reverses the selected deterministic order. Equal
+primary keys are ordered by title and then paper ID. `--limit` accepts a
+positive result count and is applied after filtering and sorting.
 
 ## Reviews, comments, and tags
 

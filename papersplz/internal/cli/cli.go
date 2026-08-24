@@ -831,6 +831,9 @@ func runList(catalogHome string, args []string, stdout, stderr io.Writer) int {
 	flags.Usage = func() {}
 	tag := flags.String("tag", "", "filter by tag")
 	author := flags.String("author", "", "filter by author text")
+	sortBy := flags.String("sort", catalog.ListSortTitle, "sort by title, added, or author")
+	reverse := flags.Bool("reverse", false, "reverse the selected ordering")
+	limit := flags.Int("limit", 0, "return at most N papers")
 	jsonOutput := flags.Bool("json", false, "print JSON")
 	if err := flags.Parse(args); err != nil {
 		return 2
@@ -839,7 +842,19 @@ func runList(catalogHome string, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "papersplz: list does not accept arguments")
 		return 2
 	}
-	papers, err := catalog.ListPapers(catalogHome, catalog.ListOptions{Tag: *tag, Author: *author})
+	limitSet := false
+	flags.Visit(func(current *flag.Flag) {
+		if current.Name == "limit" {
+			limitSet = true
+		}
+	})
+	if limitSet && *limit <= 0 {
+		fmt.Fprintln(stderr, "papersplz: list: --limit must be a positive integer")
+		return 2
+	}
+	papers, err := catalog.ListPapers(catalogHome, catalog.ListOptions{
+		Tag: *tag, Author: *author, Sort: *sortBy, Reverse: *reverse, Limit: *limit,
+	})
 	if err != nil {
 		fmt.Fprintf(stderr, "papersplz: list: %v\n", err)
 		return 1

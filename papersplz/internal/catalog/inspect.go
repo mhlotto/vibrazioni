@@ -14,9 +14,18 @@ import (
 )
 
 type ListOptions struct {
-	Tag    string
-	Author string
+	Tag     string
+	Author  string
+	Sort    string
+	Reverse bool
+	Limit   int
 }
+
+const (
+	ListSortTitle  = "title"
+	ListSortAdded  = "added"
+	ListSortAuthor = "author"
+)
 
 type Info struct {
 	Metadata   model.Catalog
@@ -73,9 +82,21 @@ func LoadPaper(catalogPath, selector string) (model.Paper, error) {
 	return paper, nil
 }
 
-// ListPapers loads validated records, applies metadata filters, and orders the
-// result deterministically by title and ID.
+// ListPapers loads validated records, applies metadata filters, and orders and
+// limits the result. The zero-value options retain title ordering with no limit.
 func ListPapers(catalogPath string, options ListOptions) ([]model.Paper, error) {
+	sortBy := strings.ToLower(strings.TrimSpace(options.Sort))
+	if sortBy == "" {
+		sortBy = ListSortTitle
+	}
+	switch sortBy {
+	case ListSortTitle, ListSortAdded, ListSortAuthor:
+	default:
+		return nil, fmt.Errorf("unknown list sort %q (want title, added, or author)", options.Sort)
+	}
+	if options.Limit < 0 {
+		return nil, errors.New("list limit must not be negative")
+	}
 	if _, err := store.ReadCatalog(filepath.Join(catalogPath, store.CatalogFilename)); err != nil {
 		return nil, fmt.Errorf("read catalog: %w", err)
 	}
@@ -114,16 +135,49 @@ func ListPapers(catalogPath string, options ListOptions) ([]model.Paper, error) 
 		papers = append(papers, paper)
 	}
 	sort.Slice(papers, func(i, j int) bool {
-		left, right := strings.ToLower(papers[i].Title), strings.ToLower(papers[j].Title)
-		if left != right {
-			return left < right
+		comparison := compareListedPapers(papers[i], papers[j], sortBy)
+		if options.Reverse {
+			return comparison > 0
 		}
-		if papers[i].Title != papers[j].Title {
-			return papers[i].Title < papers[j].Title
-		}
-		return papers[i].ID < papers[j].ID
+		return comparison < 0
 	})
+	if options.Limit > 0 && len(papers) > options.Limit {
+		papers = papers[:options.Limit]
+	}
 	return papers, nil
+}
+
+func compareListedPapers(left, right model.Paper, sortBy string) int {
+	switch sortBy {
+	case ListSortAdded:
+		if left.AddedAt.Before(right.AddedAt) {
+			return -1
+		}
+		if left.AddedAt.After(right.AddedAt) {
+			return 1
+		}
+	case ListSortAuthor:
+		if len(left.Authors) == 0 && len(right.Authors) != 0 {
+			return 1
+		}
+		if len(left.Authors) != 0 && len(right.Authors) == 0 {
+			return -1
+		}
+		if comparison := compareFolded(strings.Join(left.Authors, "\x00"), strings.Join(right.Authors, "\x00")); comparison != 0 {
+			return comparison
+		}
+	}
+	if comparison := compareFolded(left.Title, right.Title); comparison != 0 {
+		return comparison
+	}
+	return strings.Compare(left.ID, right.ID)
+}
+
+func compareFolded(left, right string) int {
+	if comparison := strings.Compare(strings.ToLower(left), strings.ToLower(right)); comparison != 0 {
+		return comparison
+	}
+	return strings.Compare(left, right)
 }
 
 // DocumentPath returns the path recorded for a paper's catalog-owned copy.

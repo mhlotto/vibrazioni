@@ -44,11 +44,14 @@ Print only the stored document path.
 `
 	listHelp = `Usage: papersplz list [OPTIONS]
 
-List papers in deterministic title order.
+List papers in deterministic order. The default is title ascending.
 
 Options:
   --tag TAG        filter by exact tag
   --author TEXT    filter by author text
+  --sort FIELD     sort by title, added, or author (default title)
+  --reverse        reverse the selected ordering
+  --limit N        return at most N papers (N must be positive)
   --json           print JSON
 `
 	infoHelp = `Usage: papersplz info [--json]

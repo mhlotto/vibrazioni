@@ -228,6 +228,32 @@ func TestShowListAndPathCommands(t *testing.T) {
 		}
 	})
 
+	t.Run("list combines sorting filtering and limit", func(t *testing.T) {
+		status, stdout, stderr := runForTest([]string{"--home", catalogPath, "list", "--tag", "MATH", "--sort", "author", "--limit", "1", "--json"}, nil)
+		if status != 0 || stderr != "" {
+			t.Fatalf("status = %d, stderr = %q", status, stderr)
+		}
+		var output []ListOutput
+		if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+			t.Fatal(err)
+		}
+		want := []ListOutput{{ID: papers[1].ID, Title: "alpha", Authors: []string{"Alice Smith"}}}
+		if !reflect.DeepEqual(output, want) {
+			t.Fatalf("list JSON = %#v, want %#v", output, want)
+		}
+	})
+
+	t.Run("list rejects invalid sort and limit", func(t *testing.T) {
+		status, _, stderr := runForTest([]string{"--home", catalogPath, "list", "--sort", "rating"}, nil)
+		if status != 1 || !strings.Contains(stderr, "unknown list sort") {
+			t.Fatalf("invalid sort: status = %d, stderr = %q", status, stderr)
+		}
+		status, _, stderr = runForTest([]string{"--home", catalogPath, "list", "--limit", "0"}, nil)
+		if status != 2 || !strings.Contains(stderr, "--limit must be a positive integer") {
+			t.Fatalf("invalid limit: status = %d, stderr = %q", status, stderr)
+		}
+	})
+
 	t.Run("path only prints document path", func(t *testing.T) {
 		status, stdout, stderr := runForTest([]string{"--home", catalogPath, "path", "bbbb"}, nil)
 		want := filepath.Join(catalogPath, catalog.PapersDirectory, papers[1].ID, papers[1].File.Name) + "\n"
@@ -836,7 +862,7 @@ func TestCommandHelpDoesNotRequireCatalog(t *testing.T) {
 		{args: []string{"remove", "--help"}, want: []string{"Usage: papersplz remove", "--yes"}},
 		{args: []string{"show", "--help"}, want: []string{"Usage: papersplz show", "--json"}},
 		{args: []string{"path", "--help"}, want: []string{"Usage: papersplz path"}},
-		{args: []string{"list", "--help"}, want: []string{"Usage: papersplz list", "--author", "--json"}},
+		{args: []string{"list", "--help"}, want: []string{"Usage: papersplz list", "--author", "--sort", "--reverse", "--limit", "--json"}},
 		{args: []string{"info", "--help"}, want: []string{"Usage: papersplz info", "--json"}},
 		{args: []string{"search", "--help"}, want: []string{"Usage: papersplz search", "--tag", "--json"}},
 		{args: []string{"doctor", "--help"}, want: []string{"Usage: papersplz doctor"}},

@@ -67,6 +67,58 @@ func TestListPapersOrdersAndFilters(t *testing.T) {
 	}
 }
 
+func TestListPapersSortsFiltersAndLimits(t *testing.T) {
+	catalogPath := newTestCatalog(t)
+	fixtures := []struct {
+		id      string
+		title   string
+		authors []string
+		tags    []string
+		added   time.Time
+	}{
+		{"aaaa00000000", "Gamma", []string{"Bob"}, []string{"topology"}, time.Date(2026, 8, 22, 0, 0, 0, 0, time.UTC)},
+		{"bbbb00000000", "Alpha", []string{"Alice"}, []string{"topology"}, time.Date(2026, 8, 24, 0, 0, 0, 0, time.UTC)},
+		{"cccc00000000", "Beta", []string{"Alice"}, []string{"topology"}, time.Date(2026, 8, 24, 0, 0, 0, 0, time.UTC)},
+		{"dddd00000000", "Delta", nil, []string{"physics"}, time.Date(2026, 8, 21, 0, 0, 0, 0, time.UTC)},
+	}
+	for _, fixture := range fixtures {
+		paper := testInspectionPaper(fixture.id, fixture.title, fixture.authors, fixture.tags)
+		paper.AddedAt, paper.UpdatedAt = fixture.added, fixture.added
+		writeCatalogPaper(t, catalogPath, paper)
+	}
+
+	tests := []struct {
+		name    string
+		options ListOptions
+		want    []string
+	}{
+		{name: "added with title tie break", options: ListOptions{Sort: ListSortAdded}, want: []string{"Delta", "Gamma", "Alpha", "Beta"}},
+		{name: "reverse added", options: ListOptions{Sort: ListSortAdded, Reverse: true}, want: []string{"Beta", "Alpha", "Gamma", "Delta"}},
+		{name: "author with title tie break and authorless last", options: ListOptions{Sort: ListSortAuthor}, want: []string{"Alpha", "Beta", "Gamma", "Delta"}},
+		{name: "normalized tag sort and limit", options: ListOptions{Tag: " TOPOLOGY ", Sort: ListSortAuthor, Limit: 2}, want: []string{"Alpha", "Beta"}},
+		{name: "title limit", options: ListOptions{Sort: ListSortTitle, Limit: 2}, want: []string{"Alpha", "Beta"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			papers, err := ListPapers(catalogPath, tt.options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			titles := make([]string, len(papers))
+			for i := range papers {
+				titles[i] = papers[i].Title
+			}
+			if !reflect.DeepEqual(titles, tt.want) {
+				t.Fatalf("titles = %v, want %v", titles, tt.want)
+			}
+		})
+	}
+
+	if _, err := ListPapers(catalogPath, ListOptions{Sort: "rating"}); err == nil || !strings.Contains(err.Error(), "unknown list sort") {
+		t.Fatalf("unknown sort error = %v", err)
+	}
+}
+
 func TestDocumentPath(t *testing.T) {
 	catalogPath := newTestCatalog(t)
 	paper := testInspectionPaper("a81f32c991b7", "Paper", nil, nil)
