@@ -36,9 +36,12 @@ sudo make install
 make install PREFIX="$HOME/.local"
 ```
 
-Packagers may override `BINDIR`, `DESTDIR`, and `BUILD_DIR`; for example,
-`make install DESTDIR=/tmp/package-root PREFIX=/usr` stages files beneath
-`/tmp/package-root/usr/bin`.
+The install target also installs `papersplz(1)` and `pplz(1)` under the
+selected prefix. Read it with `man papersplz` or `man pplz`.
+
+Packagers may override `BINDIR`, `MAN1DIR`, `DESTDIR`, and `BUILD_DIR`; for
+example, `make install DESTDIR=/tmp/package-root PREFIX=/usr` stages files
+beneath `/tmp/package-root/usr`.
 
 ## Choose and create a catalog
 

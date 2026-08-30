@@ -1,0 +1,181 @@
+.Dd August 30, 2026
+.Dt PAPERSPLZ 1
+.Os
+.Sh NAME
+.Nm papersplz , pplz
+.Nd manage a local catalog of academic papers
+.Sh SYNOPSIS
+.Nm
+.Op Fl -home Ar path
+.Ar command
+.Op Ar arguments
+.Sh DESCRIPTION
+.Nm
+stores catalog-owned copies of papers together with human-readable JSON
+metadata.
+Each catalog is self-contained and can be moved as a directory.
+.Nm pplz
+is a shorter name for the same program.
+.Pp
+Most commands require a catalog selected with
+.Fl -home
+or
+.Ev PAPERSPLZ_HOME .
+The
+.Cm init
+command instead takes the new catalog path directly.
+Paper and comment identifiers may be shortened to an unambiguous prefix.
+.Sh GLOBAL OPTIONS
+.Bl -tag -width Ds
+.It Fl -home Ar path
+Use the catalog at
+.Ar path ,
+overriding
+.Ev PAPERSPLZ_HOME .
+.It Fl h , Fl -help
+Show top-level help.
+Command groups and major commands also accept
+.Fl -help .
+.El
+.Sh COMMANDS
+.Bl -tag -width Ds
+.It Cm init Ar path Fl -name Ar name Op Fl -description Ar text
+Create a catalog.
+.It Cm add Ar source Fl -title Ar title Op options
+Import a local file or direct HTTP or HTTPS URL.
+Options include repeatable
+.Fl -author Ar name
+and
+.Fl -tag Ar tag ,
+plus
+.Fl -source Ar text .
+.It Cm edit Ar paper Op options
+Change supplied metadata fields.
+Options are
+.Fl -title ,
+.Fl -author ,
+.Fl -clear-authors ,
+.Fl -source ,
+and
+.Fl -source-url .
+.It Cm remove Ar paper Op Fl -yes
+Remove a paper and its catalog-owned files.
+Non-interactive use requires
+.Fl -yes .
+.It Cm show Ar paper Op Fl -json
+Show paper metadata.
+.It Cm path Ar paper
+Print only the stored document path.
+.It Cm open Ar paper
+Open the stored document with the platform viewer.
+.It Cm list Op options
+List papers.
+Options include
+.Fl -tag ,
+.Fl -author ,
+.Fl -sort Cm title Ns | Ns Cm added Ns | Ns Cm author ,
+.Fl -reverse ,
+.Fl -limit ,
+and
+.Fl -json .
+.It Cm info Op Fl -json
+Show catalog metadata and counts.
+.It Cm review Cm show Ar paper Op Fl -json
+Show the paper review.
+.It Cm review Cm set Ar paper Bro Ar text | Fl -file Ar file | - Brc
+Set the paper review from text, a file, or standard input.
+.It Cm review Cm edit Ar paper
+Edit the review with
+.Ev EDITOR .
+.It Cm review Cm remove Ar paper
+Remove the review.
+.It Cm comment Cm add Ar paper Ar text
+Add a comment.
+.It Cm comment Cm list Ar paper Op Fl -json
+List comments in creation order.
+.It Cm comment Cm show Ar paper Ar comment Op Fl -json
+Show a comment.
+.It Cm comment Cm edit Ar paper Ar comment
+Edit a comment with
+.Ev EDITOR .
+.It Cm comment Cm remove Ar paper Ar comment
+Remove a comment.
+.It Cm tag Cm add Ar paper Ar tag ...
+Add tags to a paper.
+.It Cm tag Cm remove Ar paper Ar tag ...
+Remove tags from a paper.
+.It Cm tag Cm list Ar paper Op Fl -json
+List a paper's tags.
+.It Cm tags Op Fl -json
+List all catalog tags and usage counts.
+.It Cm mark Bro Cm unread | reading | read Brc Ar paper
+Set the conventional reading-status tag while preserving unrelated tags.
+.It Cm relation Cm add Ar paper Ar type Ar other
+Add a relationship.
+.It Cm relation Cm list Ar paper Op Fl -json
+List direct and derived relationships.
+.It Cm relation Cm remove Ar paper Ar type Ar other
+Remove a relationship.
+Relationship types are
+.Cm related-to ,
+.Cm cites ,
+.Cm cited-by ,
+.Cm supersedes ,
+and
+.Cm superseded-by .
+.It Cm search Ar term ... Op options
+Search managed metadata using case-insensitive plain-text AND matching.
+Options include
+.Fl -tag ,
+.Fl -author ,
+and
+.Fl -json .
+.It Cm export Op Fl -json
+Write all catalog-managed metadata as JSON.
+Stored document contents are not included.
+.It Cm doctor
+Check catalog consistency without changing it.
+.El
+.Sh ENVIRONMENT
+.Bl -tag -width PAPERSPLZ_HOME
+.It Ev PAPERSPLZ_HOME
+Catalog path used when
+.Fl -home
+is not supplied.
+.It Ev EDITOR
+Editor command used by review and comment editing.
+No editor is guessed when this variable is unset.
+.El
+.Sh FILES
+.Bl -tag -width Pa
+.It Pa catalog.json
+Catalog metadata at the catalog root.
+.It Pa papers/
+Paper records and catalog-owned document copies.
+.El
+.Sh EXIT STATUS
+.Ex -std
+Usage errors and catalog or operation failures return a non-zero status.
+Diagnostics are written to standard error; normal results are written to
+standard output.
+.Sh EXAMPLES
+Create and select a catalog:
+.Bd -literal -offset indent
+pplz init "$HOME/papers" --name "My Papers"
+export PAPERSPLZ_HOME="$HOME/papers"
+.Ed
+.Pp
+Import and inspect a paper:
+.Bd -literal -offset indent
+pplz add paper.pdf --title "Example Paper" --tag unread
+pplz list
+pplz show PAPER_ID
+.Ed
+.Pp
+Mark a paper as being read and search its metadata:
+.Bd -literal -offset indent
+pplz mark reading PAPER_ID
+pplz search spectral sequence --tag reading
+.Ed
+.Sh SEE ALSO
+.Xr open 1

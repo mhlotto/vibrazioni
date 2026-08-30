@@ -2,6 +2,8 @@ GO ?= go
 BUILD_DIR ?= bin
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
+MANDIR ?= $(PREFIX)/share/man
+MAN1DIR ?= $(MANDIR)/man1
 DESTDIR ?=
 
 .PHONY: all build test vet check alias-test install
@@ -28,3 +30,6 @@ install: build
 	mkdir -p "$(DESTDIR)$(BINDIR)"
 	install -m 0755 "$(BUILD_DIR)/papersplz" "$(DESTDIR)$(BINDIR)/papersplz"
 	ln -sf papersplz "$(DESTDIR)$(BINDIR)/pplz"
+	mkdir -p "$(DESTDIR)$(MAN1DIR)"
+	install -m 0644 man/papersplz.1 "$(DESTDIR)$(MAN1DIR)/papersplz.1"
+	ln -sf papersplz.1 "$(DESTDIR)$(MAN1DIR)/pplz.1"
